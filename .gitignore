@@ -1,3 +1,15 @@
+designs/*/sim/
+designs/*/ip/
+__pycache__/
+*.wlf
+transcript
+results.xml
+questa_libs/
+
+
+
+
+#--- Python ---
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
