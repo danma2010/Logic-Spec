@@ -1,40 +1,53 @@
 ---
 name: fpga-architect
-description: Capture FPGA design requirements from a natural-language request and choose the vendor target (Xilinx or Altera). Use at the very start of a new design, before planning or any code generation. Produces designs/<name>/spec.md with structured requirements, interfaces, abstract IP needs, and acceptance criteria.
+description: Capture FPGA design requirements from a natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/spec.md and designs/<name>/unit.md.
 ---
 
 # FPGA Architect
 
-Turn the user's request into a structured spec and pick a vendor. Write no HDL,
-Tcl, or testbench code here.
+Turn the request into a structured spec, a vendor choice, and a unit manifest.
+Write no HDL, Tcl, or testbench code here.
 
 ## Steps
 
-1. Ask for a short design `<name>` if not given (directory-safe).
-2. Extract: a one-line summary, the external interfaces, and the functional
-   requirements.
-3. Express IP needs **abstractly** — e.g. "dual-clock FIFO 512×64", "DDR4
-   controller", "GT transceivers" — never as a concrete vendor part.
-4. Choose exactly **one vendor** (`xilinx` or `altera`), and justify it from the
-   requirements (available IP, transceivers, board, existing flow).
-5. Write **acceptance criteria as GIVEN/WHEN/THEN** so they map directly to
-   testbench checks later.
+1. Ask for a short unit `<name>` if not given (directory-safe).
+2. Extract summary, external interfaces, and functional requirements.
+3. **Hierarchy resolution.** Scan `designs/*/unit.md`. For each requirement,
+   decide whether it is met by:
+   - an existing unit whose `unit.md` is `status: validated` → reuse it (record
+     it in `dependencies`), or
+   - a vendor IP (keep it **abstract**, e.g. "dual-clock FIFO 512×64"), or
+   - new custom logic.
+   Never plan to reuse a unit that is not `validated`.
+4. Choose exactly one vendor (`xilinx` or `altera`), justified by requirements.
+5. Set the unit `kind`: `leaf` (no sub-units), `composite` (instantiates
+   validated units), or `top` (the FPGA top — see step 7).
+6. Write **acceptance criteria as GIVEN/WHEN/THEN** so they map to testbench
+   checks.
+7. **If this is the top unit**, capture the **pin map** in `spec.md` (or a file it
+   references): a table of `top port → package pin → IO standard`, plus clock
+   ports and periods. `fpga-toplevel` consumes this later.
 
-## Output
+## Outputs
 
-Write `designs/<name>/spec.md`:
+`designs/<name>/spec.md` (requirements, vendor + rationale, interfaces, abstract
+IP, acceptance criteria, and — for top — the pin map).
+
+`designs/<name>/unit.md` from `templates/unit.md`:
 
 ```markdown
-# <name> — Spec
-Summary: ...
-Vendor: xilinx | altera
-Vendor rationale: ...
-Interfaces: [...]
-Abstract IP: [ "dual-clock FIFO 512x64", ... ]
-Acceptance criteria:
-- GIVEN ... WHEN ... THEN ...
+---
+name: <name>
+vendor: xilinx | altera
+kind: leaf | composite | top
+status: planned
+dependencies: [ <validated unit names> ]
+ports:
+  - { name: ..., dir: in|out, width: N }
+validated: {}
+---
 ```
 
 ## Next
 
-Tell the user to run `/fpga-plan`. **Do not generate any code yet.**
+`/fpga-plan`. Do not generate any code yet.

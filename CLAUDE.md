@@ -1,72 +1,98 @@
 # FPGA Spec-Driven Design — Project Rules
 
-This repo is a **spec-driven, plan-gated FPGA design framework** for Claude Code.
-Claude generates the design (vendor IP config, custom RTL, testbenches) and the
-scripts to build/simulate it. **The user runs Questa and Vivado manually** by
-executing the generated scripts. Claude never runs EDA tools itself.
+This repo is a **spec-driven, plan-gated, hierarchical FPGA design framework** for
+Claude Code. Claude generates each design (vendor IP config, custom RTL,
+testbenches) and the scripts to build/simulate it. **The user runs Questa and
+Vivado manually** by executing the generated scripts. Claude never runs EDA tools.
+
+## Units and hierarchy
+
+Every design is a **unit** with a manifest `designs/<name>/unit.md`. A unit is:
+
+- `kind: leaf` — custom RTL + vendor IP only.
+- `kind: composite` — also instantiates other **validated** units.
+- `kind: top` — the composite designated as the FPGA top; its interface is the
+  FPGA's physical pins.
+
+A unit is **reused by direct RTL instantiation** (the child entity is instantiated
+in the parent and the child's sources are compiled into the parent). Units are
+**not** packaged as IP or block-design containers for reuse. (Vendor IP is still
+integrated within a unit via the block design; that is separate from unit reuse.)
+
+Bottom-up: build and validate leaf units, compose them into higher units, and
+finally designate one unit `top` and map its interface to pins.
 
 ## The workflow
 
 ```
-/fpga-architect  → spec.md         (requirements + vendor target)
-/fpga-plan       → plan.md         (PENDING → user approves → APPROVED)   ← GATE
-   ── nothing below runs until plan.md is APPROVED ──
-/fpga-ip         → tcl/build_ip.tcl        (user runs in Vivado)
-/fpga-blockdesign→ bd/build_bd.tcl         (user runs in Vivado, Xilinx)
-/fpga-rtl        → rtl/*.vhd
-/fpga-testbench  → tb/*.py + tb/Makefile   (cocotb, verification-first)
-/fpga-questa     → sim scripts             (user runs in Questa)
-   ── user runs the sim, pastes results back ──
-/fpga-review     → diagnose + repair → user re-runs
+per unit:
+  /fpga-architect  → spec.md + unit.md      (requirements, vendor, kind, deps)
+  /fpga-plan       → plan.md   PENDING → user approves → APPROVED     ← PLAN GATE
+     ── no code until plan.md is APPROVED ──
+  /fpga-ip         → tcl/build_ip.tcl        (user runs in Vivado)
+  /fpga-blockdesign→ bd/build_bd.tcl         (Xilinx, user runs in Vivado)
+  /fpga-rtl        → rtl/*.vhd               (instantiates validated sub-units)
+  /fpga-testbench  → tb/*.py + tb/Makefile   (cocotb, verification-first)
+  /fpga-questa     → sim scripts             (user runs in Questa)
+  /fpga-review     → on PASS: unit.md status → VALIDATED               ← VALIDATION GATE
+
+at the top:
+  /fpga-toplevel   → xdc/*.xdc + impl/build.tcl (+ run_sources.tcl, run_constraints.tcl)
+                     + top integration tb & sim   (user runs in Vivado/Questa)
 ```
 
 ## HARD RULES
 
 1. **Plan gate.** Never generate RTL, IP, block-design, testbench, or EDA Tcl
-   until `designs/<name>/plan.md` exists **and** its front-matter says
-   `status: approved`. If it doesn't, run `/fpga-plan` or ask the user to
-   approve — then stop. Every generation skill re-checks this before doing
-   anything.
-2. **EDA execution is manual.** Claude produces scripts (Vivado Tcl, Questa
-   Makefile/Tcl) but **must not** claim to have run them. Always print the exact
-   command for the user to run, then wait for pasted results.
-3. **HDL policy.** Custom RTL is **VHDL-primary**. Use Verilog/SystemVerilog
-   **only** where a vendor IP core forces it. Mixed-language simulation under
-   Questa is expected because vendor IP often ships as encrypted Verilog/SV.
-4. **Vendor.** Choose exactly one target (**Xilinx** or **Altera**) at the
-   architecture stage, justified by requirements. Keep IP **abstract**
-   (e.g. "dual-clock FIFO 512×64") until then, so the vendor stays late-bound.
-5. **Verification-first.** Write the testbench from the acceptance criteria
-   before/with the RTL. Default is **cocotb on Questa**; use SV/UVM only if the
-   plan explicitly flags it.
-6. **Never delete files without explicit user approval.**
+   until `designs/<name>/plan.md` exists **and** `status: approved`. Every
+   generation skill re-checks this and stops if it isn't met.
+2. **Validation gate.** A unit may be instantiated in another unit **only** when
+   its `unit.md` says `status: validated`. `fpga-review` sets that on a passing
+   sim. Never instantiate a `planned` or `generated` unit.
+3. **Reuse = direct RTL instantiation.** Instantiate the child entity/component in
+   the parent; include the child's RTL sources in the parent's compile/sim.
+4. **EDA execution is manual.** Claude produces scripts (Vivado Tcl, Questa
+   Makefile/Tcl) but never claims to run them. Print the exact command and wait
+   for pasted results.
+5. **HDL policy.** VHDL-primary. Verilog/SV only where a vendor IP forces it.
+6. **Vendor.** One target (Xilinx or Altera) per unit, chosen at the architecture
+   stage; keep IP abstract until then.
+7. **Verification-first.** Testbench from acceptance criteria before/with the RTL.
+   cocotb on Questa by default; UVM only if the plan flags it.
+8. **Top-level pins.** The pin map lives in the top unit's `spec.md` (or a file it
+   references). `fpga-toplevel` turns it into constraints and a non-project build.
+9. **Never delete files without explicit user approval.** When editing an existing
+   constraints or build script, extend/patch it — do not clobber it.
 
 ## Design directory layout
 
 ```
 designs/<name>/
-  spec.md      requirements + vendor            (fpga-architect)
-  plan.md      the approved plan                 (fpga-plan)  ← gate
-  rtl/         custom VHDL                        (fpga-rtl)
-  tb/          cocotb tests + Makefile            (fpga-testbench)
-  tcl/         Vivado IP generation Tcl           (fpga-ip)
-  bd/          Xilinx block design Tcl            (fpga-blockdesign)
-  sim/         run scripts, results.xml, logs     (fpga-questa)
+  unit.md      manifest: kind, status, deps, interface   (fpga-architect / fpga-review)
+  spec.md      requirements + vendor (+ pin map if top)   (fpga-architect)
+  plan.md      the approved plan                           (fpga-plan)   ← plan gate
+  rtl/         custom VHDL                                 (fpga-rtl)
+  tb/          cocotb tests + Makefile                     (fpga-testbench)
+  tcl/         Vivado IP generation Tcl                    (fpga-ip)
+  bd/          Xilinx block design Tcl                     (fpga-blockdesign)
+  sim/         run scripts, results.xml, logs             (fpga-questa)
+  xdc/         constraints (top only)                      (fpga-toplevel)
+  impl/        build.tcl + run_sources.tcl + run_constraints.tcl (top only)
 ```
 
 ## Skills
 
 | Skill | Role | Produces |
 |---|---|---|
-| `/fpga-architect` | requirements + vendor | `spec.md` |
+| `/fpga-architect` | requirements, vendor, unit manifest, hierarchy | `spec.md`, `unit.md` |
 | `/fpga-plan` | the plan + approval gate | `plan.md` |
 | `/fpga-ip` | resolve/config vendor IP | `tcl/build_ip.tcl` |
 | `/fpga-blockdesign` | Xilinx BD in Tcl | `bd/build_bd.tcl` |
-| `/fpga-rtl` | custom VHDL | `rtl/*.vhd` |
-| `/fpga-testbench` | cocotb testbench (first) | `tb/*.py`, `tb/Makefile` |
+| `/fpga-rtl` | custom VHDL + sub-unit instantiation | `rtl/*.vhd` |
+| `/fpga-testbench` | cocotb testbench (first), hierarchy-aware | `tb/*.py`, `tb/Makefile` |
 | `/fpga-questa` | Questa run scripts | `sim/*` |
-| `/fpga-review` | read results, repair | fixes |
+| `/fpga-review` | read results, repair, stamp VALIDATED | fixes, `unit.md` status |
+| `/fpga-toplevel` | pins → constraints + non-project build + top sim | `xdc/*`, `impl/*` |
 
 Subagent `fpga-critic` handles isolated sim-log/waveform analysis.
-
-Full rationale for every decision: `docs/framework-design-spec.md`.
+Full rationale: `docs/framework-design-spec.md`.

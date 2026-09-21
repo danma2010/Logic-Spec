@@ -11,25 +11,26 @@ Require `designs/<name>/plan.md` with `status: approved`. Otherwise stop.
 
 ## Steps
 
-1. Turn each **acceptance criterion** in `spec.md` into a cocotb test coroutine
-   under `designs/<name>/tb/` (e.g. `test_<top>.py`). Write these **before or
-   alongside** the RTL — the criteria are the gate the RTL must pass.
-2. Drive the DUT top through its ports; the VHDL top talks to cocotb via
-   Questa's FLI. Vendor/forced-Verilog IP inside the DUT is simulated by Questa
-   and needs no special handling in the test.
-3. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`, filling
-   `TOPLEVEL`, `MODULE`, the VHDL source glob, and the `-L <vendor_lib>` for the
-   precompiled sim libraries.
-4. If — and only if — the plan flags UVM, generate the SV/UVM environment and a
-   `run_sim.tcl` instead of cocotb.
+1. Turn each **acceptance criterion** in `spec.md` into a cocotb test under
+   `designs/<name>/tb/`. Write these before/with the RTL.
+2. Drive the DUT top through its ports; a VHDL top talks to cocotb via Questa's
+   FLI. Vendor/forced-Verilog IP inside the DUT is simulated by Questa.
+3. **Hierarchy.** For a `composite`/`top` unit, this is an **integration test**:
+   include every instantiated sub-unit's `rtl/*.vhd` in the compile order
+   (sub-units first), reading the dependency list from `unit.md`. Sub-units keep
+   their own standalone validation; this test checks their composition.
+4. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`, filling
+   `TOPLEVEL`, `MODULE`, the full `VHDL_SOURCES` (subtree included), and
+   `-L <vendor_lib>`.
+5. Use SV/UVM only if the plan flags it (emit `run_sim.tcl` instead).
 
-## Manual run (print this; do not run it)
+## Manual run (print; do not run)
 
 ```
 cd designs/<name>/tb && make          # cocotb on Questa
 ```
 
-Results land in `results.xml` (xUnit) plus the Questa transcript.
+Results: `results.xml` + transcript. Bring them to `/fpga-review`.
 
 ## Next
 

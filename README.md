@@ -43,19 +43,43 @@ Vivado, Questa, and cocotb (`pip install cocotb`).
 
 ---
 
+## Units & hierarchy
+
+Every design is a **unit** with a manifest `designs/<name>/unit.md` — its
+interface, `kind` (`leaf` / `composite` / `top`), `dependencies`, and `status`
+(`planned → generated → validated`). The framework is **bottom-up**:
+
+1. Build and **validate** leaf units (custom RTL + vendor IP).
+2. Compose validated units into higher units by **direct RTL instantiation** —
+   the child entity is instantiated in the parent and its sources compiled in.
+3. Designate the highest unit `kind: top`; its interface is the FPGA's pins.
+
+Two gates guard the flow: the **plan gate** (no code before an approved plan) and
+the **validation gate** — *a unit may only be instantiated once its `unit.md` is
+`status: validated`*, which `/fpga-review` stamps on a passing sim.
+
 ## The workflow
 
 ```
-/fpga-architect  → designs/<name>/spec.md      requirements + vendor
-/fpga-plan       → designs/<name>/plan.md       PENDING → you approve → APPROVED   ← GATE
-   ── nothing below runs until plan.md is APPROVED ──
-/fpga-ip         → tcl/build_ip.tcl             then: vivado -mode batch -source …
-/fpga-blockdesign→ bd/build_bd.tcl              then: vivado -mode batch -source …   (Xilinx)
-/fpga-rtl        → rtl/*.vhd
-/fpga-testbench  → tb/*.py + tb/Makefile        (cocotb — written first)
-/fpga-questa     → sim scripts + one-time lib compile
-   ── you run the sim, paste results back ──
-/fpga-review     → diagnosis + targeted fix → you re-run
+per unit
+  /fpga-architect  → spec.md + unit.md    requirements, vendor, kind, deps
+  /fpga-plan       → plan.md              PENDING → you approve → APPROVED   ← PLAN GATE
+     ── nothing below runs until plan.md is APPROVED ──
+  /fpga-ip         → tcl/build_ip.tcl     then: vivado -mode batch -source …
+  /fpga-blockdesign→ bd/build_bd.tcl      then: vivado -mode batch -source …   (Xilinx)
+  /fpga-rtl        → rtl/*.vhd            (instantiates validated sub-units)
+  /fpga-testbench  → tb/*.py + Makefile   (cocotb — written first)
+  /fpga-questa     → sim scripts
+     ── you run the sim, paste results back ──
+  /fpga-review     → fixes; on PASS → unit.md status = VALIDATED              ← VALIDATION GATE
+
+at the top
+  /fpga-toplevel   → xdc/<top>_pins.xdc   from the pin map in the top spec
+                     impl/build.tcl       non-project flow that sources …
+                       run_sources.tcl      (RTL hierarchy bottom-up + IP)
+                       run_constraints.tcl  (read_xdc)
+                     + top integration testbench & sim
+                     then: vivado -mode batch -source designs/<top>/impl/build.tcl
 ```
 
 ### Step by step
@@ -79,9 +103,19 @@ Vivado, Questa, and cocotb (`pip install cocotb`).
    vivado -mode batch -source designs/<name>/sim/compile_simlib.tcl   # once per tool version
    cd designs/<name>/tb && make                                        # each run (cocotb)
    ```
-6. **Review + repair.** Paste `results.xml` / the transcript into `/fpga-review`.
-   Claude diagnoses (delegating to `fpga-critic` for deep logs), applies a minimal
-   fix, and tells you the command to re-run. Loop until green.
+6. **Review + repair + validate.** Paste `results.xml` / the transcript into
+   `/fpga-review`. Claude diagnoses (delegating to `fpga-critic` for deep logs),
+   applies a minimal fix, and tells you the command to re-run. On a **passing**
+   run it stamps `unit.md` → `status: validated` — the unit can now be reused.
+7. **Compose.** In a higher unit, `/fpga-architect` picks up the validated unit as
+   a dependency and `/fpga-rtl` instantiates it directly. Repeat 1–6 for the
+   composite (its testbench is an integration test over the whole subtree).
+8. **Top level.** Mark the highest unit `kind: top` with a pin map in its
+   `spec.md`, then `/fpga-toplevel` → constraints + the modular non-project build
+   + a top integration sim. Run:
+   ```
+   vivado -mode batch -source designs/<top>/impl/build.tcl
+   ```
 
 ---
 
@@ -99,13 +133,16 @@ run early, it will stop and point you back to `/fpga-plan`.
 
 ```
 designs/<name>/
-  spec.md      requirements + vendor            (fpga-architect)
-  plan.md      the approved plan                 (fpga-plan)  ← gate
-  rtl/         custom VHDL                        (fpga-rtl)
-  tb/          cocotb tests + Makefile            (fpga-testbench)
-  tcl/         Vivado IP generation Tcl           (fpga-ip)
-  bd/          Xilinx block design Tcl            (fpga-blockdesign)
-  sim/         run scripts, results.xml, logs     (fpga-questa)
+  unit.md      manifest: kind, status, deps, ports  (fpga-architect / fpga-review)
+  spec.md      requirements + vendor (+ pin map if top)  (fpga-architect)
+  plan.md      the approved plan                    (fpga-plan)  ← plan gate
+  rtl/         custom VHDL                           (fpga-rtl)
+  tb/          cocotb tests + Makefile               (fpga-testbench)
+  tcl/         Vivado IP generation Tcl              (fpga-ip)
+  bd/          Xilinx block design Tcl               (fpga-blockdesign)
+  sim/         run scripts, results.xml, logs        (fpga-questa)
+  xdc/         constraints (top only)                (fpga-toplevel)
+  impl/        build.tcl + run_sources.tcl + run_constraints.tcl (top only)
 ```
 
 ---
