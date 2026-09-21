@@ -1,7 +1,7 @@
 # FPGA Design Framework — Design Specification
 
 **Status:** Draft v0.1 (approved plan)
-**Author:** Dan
+**Author:** Dan Mayaffit
 **Purpose:** A multi-agent, spec-driven framework that generates FPGA designs — vendor IP configuration and custom RTL — plus their testbenches, and drives functional verification through Questa, all under a mandatory plan-before-code gate.
 
 This document is the framework's own first artifact: the framework requires a written plan before any code, and this spec is that plan for the framework itself.
