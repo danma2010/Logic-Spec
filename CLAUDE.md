@@ -95,4 +95,5 @@ designs/<name>/
 | `/fpga-toplevel` | pins → constraints + non-project build + top sim | `xdc/*`, `impl/*` |
 
 Subagent `fpga-critic` handles isolated sim-log/waveform analysis.
+The generate → simulate → repair loop and its manual boundary: `docs/LOOP.md`.
 Full rationale: `docs/framework-design-spec.md`.

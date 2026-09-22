@@ -127,6 +127,14 @@ testbench, or EDA script is generated until `designs/<name>/plan.md` is marked
 gate check at the top of every generation skill. If you ask a generation skill to
 run early, it will stop and point you back to `/fpga-plan`.
 
+## The verify loop
+
+The generate → simulate → repair loop — where the design is checked against
+simulation, the manual Questa boundary, and the exact paste-back commands — is
+documented in **`docs/LOOP.md`**. In short: your cocotb testbench does the
+design-vs-expected check inside Questa; `/fpga-review` checks the result, fixes,
+and stamps `validated`; the loop pauses on every manual run.
+
 ---
 
 ## Design directory layout
@@ -189,3 +197,22 @@ vsim -c -do designs/<name>/sim/run_sim.tcl
 - **Share across projects:** this scaffold can later be packaged as a Claude Code
   **plugin** (a marketplace bundle of these same skills/agents) if you want to
   reuse it in other repos — not needed for a single project.
+
+
+
+
+
+## Notes
+The check itself is split in two:
+
+Inside the simulation (on your machine). The cocotb testbench (tb/*.py, written by /fpga-testbench from the spec's GIVEN/WHEN/THEN acceptance criteria) is what actually checks the design's behavior against expectation. That runs inside Questa when you execute make. The pass/fail verdict lands in results.xml + the transcript. This is the design-vs-expected comparison.
+Around the simulation (in Claude). You paste results.xml/the transcript back, and /fpga-review is where the design is checked against the simulation result — it reads the verdict, correlates failures to plan.md and the acceptance criteria, delegates deep transcript/waveform analysis to the fpga-critic subagent, applies a minimal fix, and prints the re-run command. On a pass it stamps unit.md → status: validated. That skill is the loop controller.
+
+So the full generate → simulate → repair loop is:
+/fpga-rtl + /fpga-testbench  →  /fpga-questa  →  [ YOU run Questa ]  →  paste results  →  /fpga-review
+         ▲                                                                                    │
+         └──────────────────────  fix, then re-run ◄──────────────────────────────────────────┘
+
+
+
+        
