@@ -82,6 +82,20 @@ at the top
                      then: vivado -mode batch -source designs/<top>/impl/build.tcl
 ```
 
+### Skill List
+ Skill                 │ Description
+  ─────────────────────┼────────────────────────────────────────────────────────────────────────────
+   fpga-architect      │ Captures requirements, vendor target, interface, and unit manifest.
+   fpga-plan           │ Produces plan.md and opens the plan gate.
+   fpga-ip             │ Emits vendor IP generation Tcl for Vivado/Platform Designer.
+   fpga-blockdesign    │ Emits Vivado IP Integrator BD Tcl.
+   fpga-rtl            │ Implements custom VHDL-2008 RTL and direct sub-unit instantiation.
+   fpga-testbench      │ Generates cocotb Python tests and Questa Makefile (verification-first).
+   fpga-questa         │ Emits simulation run scripts and library compile Tcl.
+   fpga-review         │ Parses simulation results, applies targeted repairs, handles validation gating.
+   fpga-toplevel       │ Emits pinout constraints (XDC/QSF) and modular non-project build Tcl.
+   fpga-critic         │ Isolated diagnostic reviewer for failing simulation logs and waveforms.
+
 ### Step by step
 
 1. **Architect.** `/fpga-architect "1G Ethernet loopback with an AXI-Stream FIFO"`
