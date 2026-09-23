@@ -135,6 +135,13 @@ documented in **`docs/LOOP.md`**. In short: your cocotb testbench does the
 design-vs-expected check inside Questa; `/fpga-review` checks the result, fixes,
 and stamps `validated`; the loop pauses on every manual run.
 
+**Automatic mode (opt-in).** By default the loop is manual. Invoke `/fpga-auto
+<unit>` and Claude Code runs it for you via Bash — functional sim (any cocotb
+simulator) + an out-of-context synthesis check — iterating fixes up to a cap, with
+a full log in `sim/auto_log.md`. It never runs implementation/bitstream/hardware,
+and it asks you to confirm before stamping `validated`. Details in `docs/LOOP.md`
+and `.claude/skills/fpga-auto/SKILL.md`.
+
 ---
 
 ## Design directory layout

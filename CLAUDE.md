@@ -51,9 +51,14 @@ at the top:
    sim. Never instantiate a `planned` or `generated` unit.
 3. **Reuse = direct RTL instantiation.** Instantiate the child entity/component in
    the parent; include the child's RTL sources in the parent's compile/sim.
-4. **EDA execution is manual.** Claude produces scripts (Vivado Tcl, Questa
-   Makefile/Tcl) but never claims to run them. Print the exact command and wait
-   for pasted results.
+4. **EDA execution is manual by default.** Claude produces scripts (Vivado Tcl,
+   Questa Makefile/Tcl) but never claims to run them — print the exact command and
+   wait for pasted results. **Exception: auto mode.** Only when the user
+   explicitly invokes `/fpga-auto`, Claude Code may execute the prepared
+   *functional-sim* and *OOC synth-check* scripts itself via Bash, bounded by the
+   `fpga-auto` guardrails (iteration cap, logging, stop-and-hand-back). Even then
+   it reports only real results, never runs implementation/bitstream/hardware, and
+   never stamps `validated` without user confirmation.
 5. **HDL policy.** VHDL-primary. Verilog/SV only where a vendor IP forces it.
 6. **Vendor.** One target (Xilinx or Altera) per unit, chosen at the architecture
    stage; keep IP abstract until then.
@@ -93,6 +98,7 @@ designs/<name>/
 | `/fpga-questa` | Questa run scripts | `sim/*` |
 | `/fpga-review` | read results, repair, stamp VALIDATED | fixes, `unit.md` status |
 | `/fpga-toplevel` | pins → constraints + non-project build + top sim | `xdc/*`, `impl/*` |
+| `/fpga-auto` | opt-in: run sim + OOC synth loop via Bash, bounded | runs tools, `sim/auto_log.md` |
 
 Subagent `fpga-critic` handles isolated sim-log/waveform analysis.
 The generate → simulate → repair loop and its manual boundary: `docs/LOOP.md`.

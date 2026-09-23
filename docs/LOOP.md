@@ -82,3 +82,39 @@ Same `/fpga-review` locus each time — only the DUT scope grows:
 - **Never-claim-to-run** — Claude only prepares scripts and reads pasted results.
 - **Validation gate** — a unit is stamped `validated` only with a passing result
   in hand, and only a `validated` unit may be reused.
+
+## Automatic mode (opt-in) — `/fpga-auto`
+
+By default the loop is manual (above). When you invoke `/fpga-auto <unit>`, Claude
+Code runs the loop itself via Bash — the one exception to the manual boundary:
+
+```
+        ┌──────────────────────────────────────────────┐
+        ▼                                               │ minimal fix (no interface change)
+ ┌───────────────┐  run   ┌───────────────┐  PASS  ┌───────────────┐        │
+ │ generate/fix  │───────▶│ tools/run_sim │───────▶│ run_synth_    │──PASS─▶ done
+ │  (Claude)     │        │  (Questa/…)   │        │ check (OOC)   │        │
+ └───────────────┘        └──────┬────────┘        └──────┬────────┘        │
+        ▲                        │ FAIL                   │ FAIL (RTL)       │
+        └────────────────────────┴────────────────────────┴──────────────────┘
+                                   (cap: 5 iterations)
+                                          │ done
+                                          ▼
+                        summarize  →  ASK USER TO CONFIRM  →  unit.md: validated
+```
+
+Scope and guardrails (see `.claude/skills/fpga-auto/SKILL.md`):
+
+- **Functional sim + OOC synth check only** — never implementation, bitstream, or
+  hardware.
+- **Plan gate still applies**; a composite's sub-units must already be validated.
+- **Bounded** (default 5 iterations) with a full audit trail in
+  `designs/<unit>/sim/auto_log.md`.
+- **Stops and hands back** on: cap reached, a repeated failure, an ambiguous
+  cause, an interface-changing fix, or a non-functional (timing/resource) failure.
+- **Confirmation before validate** — the loop finishing clean does *not*
+  auto-stamp `validated`; Claude asks you first.
+- Reports only **real** run results.
+
+Commands it runs: `bash tools/run_sim.sh <unit> [SIM]` and
+`bash tools/run_synth_check.sh <unit> [PART]`.
