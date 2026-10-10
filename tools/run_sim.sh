@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # run_sim.sh <unit> [SIM]
+# NOTE: single-run smoke check (all tests in one simulator run). The framework's
+# standard runner is tools/run_tests.sh — test by test + sim/test_report.md.
 # Runs a unit's cocotb functional simulation and prints a one-line verdict the
 # auto loop can parse. Simulator-agnostic via cocotb's SIM (questa|questa-fli|
 # icarus|verilator|ghdl|...). Exit: 0 pass, 1 fail, 2 setup error.

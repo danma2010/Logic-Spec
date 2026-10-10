@@ -54,9 +54,11 @@ interface, `kind` (`leaf` / `composite` / `top`), `dependencies`, and `status`
    the child entity is instantiated in the parent and its sources compiled in.
 3. Designate the highest unit `kind: top`; its interface is the FPGA's pins.
 
-Two gates guard the flow: the **plan gate** (no code before an approved plan) and
-the **validation gate** — *a unit may only be instantiated once its `unit.md` is
-`status: validated`*, which `/fpga-review` stamps on a passing sim.
+Three gates guard the flow: the **plan gate** (no code before an approved plan),
+the **test-plan gate** (no testbench before an approved test plan), and the
+**validation gate** — *a unit may only be instantiated once its `unit.md` is
+`status: validated`*, which `/fpga-review` stamps when every `must` test in the
+test plan passes.
 
 ## The workflow
 
@@ -65,13 +67,14 @@ per unit
   /fpga-architect  → spec.md + unit.md    requirements, vendor, kind, deps
   /fpga-plan       → plan.md              PENDING → you approve → APPROVED   ← PLAN GATE
      ── nothing below runs until plan.md is APPROVED ──
+  /fpga-testplan   → testplan.md          tests T01…, pass criteria, AC trace  ← TEST-PLAN GATE
   /fpga-ip         → tcl/build_ip.tcl     then: vivado -mode batch -source …
   /fpga-blockdesign→ bd/build_bd.tcl      then: vivado -mode batch -source …   (Xilinx)
   /fpga-rtl        → rtl/*.vhd            (instantiates validated sub-units)
-  /fpga-testbench  → tb/*.py + Makefile   (cocotb — written first)
+  /fpga-testbench  → tb/*.py + Makefile   (one cocotb test per test-plan entry)
   /fpga-questa     → sim scripts
-     ── you run the sim, paste results back ──
-  /fpga-review     → fixes; on PASS → unit.md status = VALIDATED              ← VALIDATION GATE
+     ── you run: bash tools/run_tests.sh <name>  → test by test → sim/test_report.md ──
+  /fpga-review     → fixes per failing test; all MUST pass → VALIDATED        ← VALIDATION GATE
 
 at the top
   /fpga-toplevel   → xdc/<top>_pins.xdc   from the pin map in the top spec
@@ -109,18 +112,29 @@ at the top
    vivado -mode batch -source designs/<name>/tcl/build_ip.tcl
    vivado -mode batch -source designs/<name>/bd/build_bd.tcl
    ```
-4. **RTL + testbench.** `/fpga-rtl` writes VHDL; `/fpga-testbench` writes the
-   cocotb tests (from the acceptance criteria) and the run `Makefile`.
+3b. **Test plan (the second gate).** `/fpga-testplan` breaks the unit into
+   features and writes `testplan.md`: a collection of tests (`T01`, `T02`, …), each
+   validating specific features, tracing to the numbered acceptance criteria
+   (`AC-n`), with a priority (`must`/`should`) and a **measurable pass
+   criterion**. Approve it like the plan. No testbench code before this.
+4. **RTL + testbench.** `/fpga-rtl` writes VHDL; `/fpga-testbench` writes one
+   cocotb test per test-plan entry (same ID/function name, pass criterion coded
+   as assertions) and the run `Makefile`.
 5. **Questa scripts.** `/fpga-questa` writes the one-time library-compile script
    and confirms the run Makefile. Run manually:
    ```
    vivado -mode batch -source designs/<name>/sim/compile_simlib.tcl   # once per tool version
-   cd designs/<name>/tb && make                                        # each run (cocotb)
+   bash tools/run_tests.sh <name>                                      # test by test + report
    ```
-6. **Review + repair + validate.** Paste `results.xml` / the transcript into
-   `/fpga-review`. Claude diagnoses (delegating to `fpga-critic` for deep logs),
-   applies a minimal fix, and tells you the command to re-run. On a **passing**
-   run it stamps `unit.md` → `status: validated` — the unit can now be reused.
+   Each test runs in its own simulator invocation, in plan order. The result is
+   `designs/<name>/sim/test_report.md` — a table of every test with PASS/FAIL,
+   failure reason, seed and log link, the AC coverage, and an overall verdict.
+6. **Review + repair + validate.** Run `/fpga-review`; it reads
+   `sim/test_report.md` (or a pasted `results.xml`). Claude takes the failing
+   tests in plan order, diagnoses each against its pass criterion (delegating to
+   `fpga-critic` for deep logs), applies a minimal fix, and gives you the command
+   to re-run that test. When **every `must` test passes** on a full run it stamps
+   `unit.md` → `status: validated` — the unit can now be reused.
 7. **Compose.** In a higher unit, `/fpga-architect` picks up the validated unit as
    a dependency and `/fpga-rtl` instantiates it directly. Repeat 1–6 for the
    composite (its testbench is an integration test over the whole subtree).
@@ -146,13 +160,15 @@ run early, it will stop and point you back to `/fpga-plan`.
 The generate → simulate → repair loop — where the design is checked against
 simulation, the manual Questa boundary, and the exact paste-back commands — is
 documented in **`docs/LOOP.md`**. In short: your cocotb testbench does the
-design-vs-expected check inside Questa; `/fpga-review` checks the result, fixes,
-and stamps `validated`; the loop pauses on every manual run.
+design-vs-expected check inside Questa, test by test; the report lists which
+tests passed and failed; `/fpga-review` checks it, fixes, and stamps
+`validated`; the loop pauses on every manual run.
 
 **Automatic mode (opt-in).** By default the loop is manual. Invoke `/fpga-auto
 <unit>` and Claude Code runs it for you via Bash — functional sim (any cocotb
-simulator) + an out-of-context synthesis check — iterating fixes up to a cap, with
-a full log in `sim/auto_log.md`. It never runs implementation/bitstream/hardware,
+simulator, test by test) + an out-of-context synthesis check — iterating fixes
+up to a cap, with a full log in `sim/auto_log.md` and the result report
+`sim/test_report.md` listing which tests passed and which failed. It never runs implementation/bitstream/hardware,
 and it asks you to confirm before stamping `validated`. Details in `docs/LOOP.md`
 and `.claude/skills/fpga-auto/SKILL.md`.
 
@@ -165,11 +181,14 @@ designs/<name>/
   unit.md      manifest: kind, status, deps, ports  (fpga-architect / fpga-review)
   spec.md      requirements + vendor (+ pin map if top)  (fpga-architect)
   plan.md      the approved plan                    (fpga-plan)  ← plan gate
+  testplan.md  tests + pass criteria + AC trace     (fpga-testplan) ← test-plan gate
   rtl/         custom VHDL                           (fpga-rtl)
   tb/          cocotb tests + Makefile               (fpga-testbench)
   tcl/         Vivado IP generation Tcl              (fpga-ip)
   bd/          Xilinx block design Tcl               (fpga-blockdesign)
-  sim/         run scripts, results.xml, logs        (fpga-questa)
+  sim/         run scripts, logs                     (fpga-questa)
+    tests/<ID>.log|.xml   per-test results          (tools/run_tests.sh)
+    test_report.md|.json  pass/fail report          (tools/make_report.py)
   xdc/         constraints (top only)                (fpga-toplevel)
   impl/        build.tcl + run_sources.tcl + run_constraints.tcl (top only)
 ```
@@ -185,6 +204,9 @@ designs/<name>/
 - **Verification-first with cocotb on Questa** — Python testbenches make the
   repair loop robust and give clean `results.xml`; UVM stays available for
   sign-off.
+- **Test plan before tests** — verification is a planned collection of tests,
+  each with a measurable pass criterion fixed before any code, run one by one and
+  reported per test.
 - **EDA execution is manual** — every tool run is a prepared script you invoke,
   so you stay in control of Vivado/Questa.
 
@@ -200,7 +222,15 @@ vivado -mode batch -source designs/<name>/sim/compile_simlib.tcl
 vivado -mode batch -source designs/<name>/tcl/build_ip.tcl
 vivado -mode batch -source designs/<name>/bd/build_bd.tcl
 
-# simulate (cocotb, default)
+# check the test plan (Python lint, no EDA)
+python3 tools/make_report.py --check designs/<name>
+
+# simulate test by test + report (cocotb, default)
+bash tools/run_tests.sh <name>                 # all tests → sim/test_report.md
+bash tools/run_tests.sh <name> questa T02 T05  # selected tests
+RANDOM_SEED=<n> bash tools/run_tests.sh <name> questa T01   # reproduce a seed
+
+# simulate all tests in one run (quick)
 cd designs/<name>/tb && make
 
 # simulate (SV/UVM path)
