@@ -17,7 +17,7 @@ Require `designs/<name>/plan.md` with `status: approved`. Otherwise stop.
    FLI. Vendor/forced-Verilog IP inside the DUT is simulated by Questa.
 3. **Hierarchy.** For a `composite`/`top` unit, this is an **integration test**:
    include every instantiated sub-unit's `rtl/*.vhd` in the compile order
-   (sub-units first), reading the dependency list from `unit.md`. Sub-units keep
+   (sub-units first), reading the dependency list from `spec.md`. Sub-units keep
    their own standalone validation; this test checks their composition.
 4. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`, filling
    `TOPLEVEL`, `MODULE`, the full `VHDL_SOURCES` (subtree included), and
@@ -36,3 +36,8 @@ Results: `results.xml` + transcript. Bring them to `/fpga-review`.
 
 `/fpga-questa` to (re)generate sim scripts and the one-time lib compile, then run
 manually and bring results to `/fpga-review`.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

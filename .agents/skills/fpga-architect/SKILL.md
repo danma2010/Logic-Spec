@@ -1,20 +1,20 @@
 ---
 name: fpga-architect
-description: Capture FPGA design requirements from a natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/spec.md and designs/<name>/unit.md.
+description: Capture FPGA design requirements from an input spec.md file or natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/architecture.md and never modifies the input spec.md.
 ---
 
 # FPGA Architect
 
-Turn the request into a structured spec, a vendor choice, and a unit manifest.
-Write no HDL, Tcl, or testbench code here.
+Turn the request or input `spec.md` into a structured architecture document, a vendor choice, and a unit manifest.
+Write no HDL, Tcl, or testbench code here. **Never modify the input `spec.md` file.**
 
 ## Steps
 
 1. Ask for a short unit `<name>` if not given (directory-safe).
-2. Extract summary, external interfaces, and functional requirements.
-3. **Hierarchy resolution.** Scan `designs/*/unit.md`. For each requirement,
+2. Extract summary, external interfaces, and functional requirements from the user request or input `spec.md`.
+3. **Hierarchy resolution.** Scan `designs/*/architecture.md`. For each requirement,
    decide whether it is met by:
-   - an existing unit whose `unit.md` is `status: validated` → reuse it (record
+   - an existing unit whose `architecture.md` is `status: validated` → reuse it (record
      it in `dependencies`), or
    - a vendor IP (keep it **abstract**, e.g. "dual-clock FIFO 512×64"), or
    - new custom logic.
@@ -24,16 +24,13 @@ Write no HDL, Tcl, or testbench code here.
    validated units), or `top` (the FPGA top — see step 7).
 6. Write **acceptance criteria as GIVEN/WHEN/THEN** so they map to testbench
    checks.
-7. **If this is the top unit**, capture the **pin map** in `spec.md` (or a file it
+7. **If this is the top unit**, capture the **pin map** in `architecture.md` (or a file it
    references): a table of `top port → package pin → IO standard`, plus clock
    ports and periods. `fpga-toplevel` consumes this later.
 
 ## Outputs
 
-`designs/<name>/spec.md` (requirements, vendor + rationale, interfaces, abstract
-IP, acceptance criteria, and — for top — the pin map).
-
-`designs/<name>/unit.md` from `templates/unit.md`:
+Produces a single file `designs/<name>/architecture.md` based on `templates/architecture.md`. The frontmatter should contain the manifest data:
 
 ```markdown
 ---
@@ -51,3 +48,8 @@ validated: {}
 ## Next
 
 `/fpga-plan`. Do not generate any code yet.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

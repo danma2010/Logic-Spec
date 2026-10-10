@@ -45,7 +45,7 @@ Vivado, Questa, and cocotb (`pip install cocotb`).
 
 ## Units & hierarchy
 
-Every design is a **unit** with a manifest `designs/<name>/unit.md` — its
+Every design is a **unit** with a manifest `designs/<name>/spec.md` — its
 interface, `kind` (`leaf` / `composite` / `top`), `dependencies`, and `status`
 (`planned → generated → validated`). The framework is **bottom-up**:
 
@@ -54,27 +54,24 @@ interface, `kind` (`leaf` / `composite` / `top`), `dependencies`, and `status`
    the child entity is instantiated in the parent and its sources compiled in.
 3. Designate the highest unit `kind: top`; its interface is the FPGA's pins.
 
-Three gates guard the flow: the **plan gate** (no code before an approved plan),
-the **test-plan gate** (no testbench before an approved test plan), and the
-**validation gate** — *a unit may only be instantiated once its `unit.md` is
-`status: validated`*, which `/fpga-review` stamps when every `must` test in the
-test plan passes.
+Two gates guard the flow: the **plan gate** (no code before an approved plan) and
+the **validation gate** — *a unit may only be instantiated once its `spec.md` is
+`status: validated`*, which `/fpga-review` stamps on a passing sim.
 
 ## The workflow
 
 ```
 per unit
-  /fpga-architect  → spec.md + unit.md    requirements, vendor, kind, deps
+  /fpga-architect  → spec.md    requirements, vendor, kind, deps
   /fpga-plan       → plan.md              PENDING → you approve → APPROVED   ← PLAN GATE
      ── nothing below runs until plan.md is APPROVED ──
-  /fpga-testplan   → testplan.md          tests T01…, pass criteria, AC trace  ← TEST-PLAN GATE
   /fpga-ip         → tcl/build_ip.tcl     then: vivado -mode batch -source …
   /fpga-blockdesign→ bd/build_bd.tcl      then: vivado -mode batch -source …   (Xilinx)
   /fpga-rtl        → rtl/*.vhd            (instantiates validated sub-units)
-  /fpga-testbench  → tb/*.py + Makefile   (one cocotb test per test-plan entry)
+  /fpga-testbench  → tb/*.py + Makefile   (cocotb — written first)
   /fpga-questa     → sim scripts
-     ── you run: bash tools/run_tests.sh <name>  → test by test → sim/test_report.md ──
-  /fpga-review     → fixes per failing test; all MUST pass → VALIDATED        ← VALIDATION GATE
+     ── you run the sim, paste results back ──
+  /fpga-review     → fixes; on PASS → spec.md status = VALIDATED              ← VALIDATION GATE
 
 at the top
   /fpga-toplevel   → xdc/<top>_pins.xdc   from the pin map in the top spec
@@ -134,7 +131,7 @@ at the top
    tests in plan order, diagnoses each against its pass criterion (delegating to
    `fpga-critic` for deep logs), applies a minimal fix, and gives you the command
    to re-run that test. When **every `must` test passes** on a full run it stamps
-   `unit.md` → `status: validated` — the unit can now be reused.
+   `spec.md` → `status: validated` — the unit can now be reused.
 7. **Compose.** In a higher unit, `/fpga-architect` picks up the validated unit as
    a dependency and `/fpga-rtl` instantiates it directly. Repeat 1–6 for the
    composite (its testbench is an integration test over the whole subtree).
@@ -168,7 +165,8 @@ tests passed and failed; `/fpga-review` checks it, fixes, and stamps
 <unit>` and Claude Code runs it for you via Bash — functional sim (any cocotb
 simulator, test by test) + an out-of-context synthesis check — iterating fixes
 up to a cap, with a full log in `sim/auto_log.md` and the result report
-`sim/test_report.md` listing which tests passed and which failed. It never runs implementation/bitstream/hardware,
+`sim/test_report.md` listing which tests passed and which failed. 
+It never runs implementation/bitstream/hardware,
 and it asks you to confirm before stamping `validated`. Details in `docs/LOOP.md`
 and `.claude/skills/fpga-auto/SKILL.md`.
 
@@ -178,15 +176,16 @@ and `.claude/skills/fpga-auto/SKILL.md`.
 
 ```
 designs/<name>/
-  unit.md      manifest: kind, status, deps, ports  (fpga-architect / fpga-review)
-  spec.md      requirements + vendor (+ pin map if top)  (fpga-architect)
+  spec.md      manifest: kind, status, deps, ports  (fpga-architect / fpga-review), requirements + vendor 
+               (+ pin map if top)  (fpga-architect)
+  design_log.md  status and stage tracking log (prepended per cycle)
   plan.md      the approved plan                    (fpga-plan)  ← plan gate
   testplan.md  tests + pass criteria + AC trace     (fpga-testplan) ← test-plan gate
   rtl/         custom VHDL                           (fpga-rtl)
   tb/          cocotb tests + Makefile               (fpga-testbench)
   tcl/         Vivado IP generation Tcl              (fpga-ip)
   bd/          Xilinx block design Tcl               (fpga-blockdesign)
-  sim/         run scripts, logs                     (fpga-questa)
+  sim/         run scripts, results.xml, logs        (fpga-questa)
     tests/<ID>.log|.xml   per-test results          (tools/run_tests.sh)
     test_report.md|.json  pass/fail report          (tools/make_report.py)
   xdc/         constraints (top only)                (fpga-toplevel)
@@ -257,7 +256,7 @@ vsim -c -do designs/<name>/sim/run_sim.tcl
 The check itself is split in two:
 
 Inside the simulation (on your machine). The cocotb testbench (tb/*.py, written by /fpga-testbench from the spec's GIVEN/WHEN/THEN acceptance criteria) is what actually checks the design's behavior against expectation. That runs inside Questa when you execute make. The pass/fail verdict lands in results.xml + the transcript. This is the design-vs-expected comparison.
-Around the simulation (in Claude). You paste results.xml/the transcript back, and /fpga-review is where the design is checked against the simulation result — it reads the verdict, correlates failures to plan.md and the acceptance criteria, delegates deep transcript/waveform analysis to the fpga-critic subagent, applies a minimal fix, and prints the re-run command. On a pass it stamps unit.md → status: validated. That skill is the loop controller.
+Around the simulation (in Claude). You paste results.xml/the transcript back, and /fpga-review is where the design is checked against the simulation result — it reads the verdict, correlates failures to plan.md and the acceptance criteria, delegates deep transcript/waveform analysis to the fpga-critic subagent, applies a minimal fix, and prints the re-run command. On a pass it stamps spec.md → status: validated. That skill is the loop controller.
 
 So the full generate → simulate → repair loop is:
 /fpga-rtl + /fpga-testbench  →  /fpga-questa  →  [ YOU run Questa ]  →  paste results  →  /fpga-review

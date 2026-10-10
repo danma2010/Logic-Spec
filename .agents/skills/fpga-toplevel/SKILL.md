@@ -10,14 +10,14 @@ constraints → non-project build, plus a top integration sim.
 
 ## Gate checks (do these first)
 
-1. `designs/<top>/unit.md` has `kind: top` and `plan.md` is `status: approved`.
+1. `designs/<top>/architecture.md` has `kind: top` and `plan.md` is `status: approved`.
 2. **Every** unit in `dependencies` (transitively) is `status: validated`.
    If any is not, stop and name it.
 
 ## Steps
 
 ### 1. Constraints from the pin map
-Read the pin map from `designs/<top>/spec.md` (or the file it references): each
+Read the pin map from `designs/<top>/architecture.md` (or the file it references): each
 `top port → package pin → IO standard`, plus clocks. Generate or **edit**
 `designs/<top>/xdc/<top>_pins.xdc` (based on `templates/xdc/pins.xdc`):
 
@@ -56,3 +56,8 @@ cd designs/<top>/tb && make
 # implementation to bitstream
 vivado -mode batch -source designs/<top>/impl/build.tcl
 ```
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

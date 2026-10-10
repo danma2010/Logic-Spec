@@ -7,7 +7,7 @@ Vivado manually** by executing the generated scripts. Claude never runs EDA tool
 
 ## Units and hierarchy
 
-Every design is a **unit** with a manifest `designs/<name>/unit.md`. A unit is:
+Every design is a **unit** with a manifest `designs/<name>/spec.md`. A unit is:
 
 - `kind: leaf` — custom RTL + vendor IP only.
 - `kind: composite` — also instantiates other **validated** units.
@@ -26,7 +26,7 @@ finally designate one unit `top` and map its interface to pins.
 
 ```
 per unit:
-  /fpga-architect  → spec.md + unit.md      (requirements, vendor, kind, deps)
+  /fpga-architect  → spec.md      (requirements, vendor, kind, deps)
   /fpga-plan       → plan.md   PENDING → user approves → APPROVED     ← PLAN GATE
      ── no code until plan.md is APPROVED ──
   /fpga-testplan   → testplan.md PENDING → user approves → APPROVED   ← TEST-PLAN GATE
@@ -88,8 +88,9 @@ at the top:
 
 ```
 designs/<name>/
-  unit.md      manifest: kind, status, deps, interface   (fpga-architect / fpga-review)
-  spec.md      requirements + vendor (+ pin map if top)   (fpga-architect)
+  spec.md      manifest: kind, status, deps, interface   (fpga-architect / fpga-review), 
+               requirements + vendor (+ pin map if top)   (fpga-architect)
+  design_log.md  status and stage tracking log (prepended per cycle)
   plan.md      the approved plan                           (fpga-plan)   ← plan gate
   testplan.md  tests, pass criteria, AC trace              (fpga-testplan) ← test-plan gate
   rtl/         custom VHDL                                 (fpga-rtl)

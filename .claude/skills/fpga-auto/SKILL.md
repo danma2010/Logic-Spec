@@ -10,10 +10,10 @@ Runs the verify loop for a unit automatically inside Claude Code. This is the
 
 ## Preconditions (stop if unmet)
 
-- `designs/<unit>/unit.md` exists and `designs/<unit>/plan.md` is
+- `designs/<unit>/spec.md` exists and `designs/<unit>/plan.md` is
   `status: approved` (plan gate still applies).
 - RTL and a cocotb testbench exist (`/fpga-rtl`, `/fpga-testbench` have run).
-- For a `composite`, every dependency in `unit.md` is `status: validated`.
+- For a `composite`, every dependency in `spec.md` is `status: validated`.
 - `Bash` is available and the simulator (and Vivado, for the synth check) are on
   `PATH`. If not, stay in manual mode and say so.
 
@@ -62,5 +62,10 @@ Append every command, verdict, and applied fix to
 
 When the loop finishes clean, **do not stamp `validated` automatically.** Present
 the summary (tests passed, synth clean, fixes applied, log path) and **ask the
-user to confirm.** Only on confirmation set `unit.md` → `status: validated` and
+user to confirm.** Only on confirmation set `spec.md` → `status: validated` and
 fill `validated: { date, tests }`. Without confirmation, leave the status as is.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

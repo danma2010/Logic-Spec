@@ -14,17 +14,22 @@ for approval. Do not write RTL before then.
 
 1. Implement the custom modules from the plan's hierarchy as **VHDL-2008** under
    `designs/<name>/rtl/`. One entity/architecture per file; the top entity
-   exposes the interfaces from `spec.md`.
+   exposes the interfaces from `architecture.md`.
 2. **Instantiate validated sub-units by direct RTL instantiation.** For each
-   dependency in `unit.md`, confirm its `unit.md` is `status: validated`, then
+   dependency in `architecture.md`, confirm its `architecture.md` is `status: validated`, then
    instantiate its top entity (`entity work.<child> ...` or a component). Note
    that the child's `rtl/*.vhd` must be compiled into this unit — record that in
    the sim sources so `fpga-testbench` and `fpga-toplevel` include them.
 3. Instantiate generated vendor IP by component name where the plan says so.
 4. Use Verilog/SV only if the plan flagged a forced-Verilog dependency (note it
    in the file header).
-5. Satisfy the **acceptance criteria** in `spec.md`.
+5. Satisfy the **acceptance criteria** in `architecture.md`.
 
 ## Next
 
 `/fpga-testbench` (write it first if not already), then `/fpga-questa`.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

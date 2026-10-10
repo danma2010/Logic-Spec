@@ -33,7 +33,7 @@ simulation — by design, because EDA execution is manual here.
  │ /fpga-rtl  /fpga-testbench │──────────────▶│   Questa      │     │
  │ /fpga-ip   /fpga-questa    │  make / vsim  │  (your PC)    │     │
  └───────────────────────────┘               └──────┬───────┘      │
-        unit.md: generated                          │ results.xml   │
+        spec.md: generated                          │ results.xml   │
                                                      │ transcript    │
                                             paste    ▼               │
                                               ┌──────────────┐       │
@@ -42,7 +42,7 @@ simulation — by design, because EDA execution is manual here.
                                               └──────┬───────┘
                                                      │ PASS
                                                      ▼
-                                        unit.md: status = validated
+                                        spec.md: status = validated
 ```
 
 ## The exact commands
@@ -65,7 +65,7 @@ waits for the next paste.
 | Prepare sim scripts | `/fpga-questa` |
 | **Run the sim** | **you** (Questa) |
 | Check result, diagnose, fix, stamp | `/fpga-review` (+ `fpga-critic`) |
-| Record pass | `unit.md` → `status: validated` |
+| Record pass | `spec.md` → `status: validated` |
 
 ## The loop recurs at every hierarchy level
 
@@ -100,7 +100,7 @@ Code runs the loop itself via Bash — the one exception to the manual boundary:
                                    (cap: 5 iterations)
                                           │ done
                                           ▼
-                        summarize  →  ASK USER TO CONFIRM  →  unit.md: validated
+                        summarize  →  ASK USER TO CONFIRM  →  spec.md: validated
 ```
 
 Scope and guardrails (see `.claude/skills/fpga-auto/SKILL.md`):

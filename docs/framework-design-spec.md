@@ -137,7 +137,7 @@ fpga-agent-framework/
     plan/              plan-gate enforcement
   designs/             per-design working dirs (generated)
     <design>/
-      spec.md · plan.md
+      spec.md · plan.md · design_log.md
       rtl/   tb/(cocotb)   tcl/   bd/(xilinx)   sim/(results.xml, transcripts, waveforms)
   docs/
     framework-design-spec.md   ← this file

@@ -7,7 +7,8 @@ Vivado manually** by executing the generated scripts. The agent never runs EDA t
 
 ## Units and hierarchy
 
-Every design is a **unit** with a manifest `designs/<name>/unit.md`. A unit is:
+Every design is a **unit** with a manifest `designs/<name>/
+  spec.md                input requirements doc (never modified)architecture.md`. A unit is:
 
 - `kind: leaf` — custom RTL + vendor IP only.
 - `kind: composite` — also instantiates other **validated** units.
@@ -26,7 +27,7 @@ finally designate one unit `top` and map its interface to pins.
 
 ```
 per unit:
-  fpga-architect   → spec.md + unit.md      (requirements, vendor, kind, deps)
+  fpga-architect   → architecture.md      (requirements, vendor, kind, deps)
   fpga-plan        → plan.md   PENDING → user approves → APPROVED     ← PLAN GATE
      ── no code until plan.md is APPROVED ──
   fpga-ip          → tcl/build_ip.tcl        (user runs in Vivado)
@@ -44,10 +45,11 @@ at the top:
 ## HARD RULES
 
 1. **Plan gate.** Never generate RTL, IP, block-design, testbench, or EDA Tcl
-   until `designs/<name>/plan.md` exists **and** `status: approved`. Every
+   until `designs/<name>/spec.md
+   input requirements doc (never modified)plan.md` exists **and** `status: approved`. Every
    generation skill re-checks this and stops if it isn't met.
 2. **Validation gate.** A unit may be instantiated in another unit **only** when
-   its `unit.md` says `status: validated`. `fpga-review` sets that on a passing
+   its `architecture.md` says `status: validated`. `fpga-review` sets that on a passing
    sim. Never instantiate a `planned` or `generated` unit.
 3. **Reuse = direct RTL instantiation.** Instantiate the child entity/component in
    the parent; include the child's RTL sources in the parent's compile/sim.
@@ -59,7 +61,7 @@ at the top:
    stage; keep IP abstract until then.
 7. **Verification-first.** Testbench from acceptance criteria before/with the RTL.
    cocotb on Questa by default; UVM only if the plan flags it.
-8. **Top-level pins.** The pin map lives in the top unit's `spec.md` (or a file it
+8. **Top-level pins.** The pin map lives in the top unit's `architecture.md` (or a file it
    references). `fpga-toplevel` turns it into constraints and a non-project build.
 9. **Never delete files without explicit user approval.** When editing an existing
    constraints or build script, extend/patch it — do not clobber it.
@@ -68,30 +70,32 @@ at the top:
 
 ```
 designs/<name>/
-  unit.md      manifest: kind, status, deps, interface   (fpga-architect / fpga-review)
-  spec.md      requirements + vendor (+ pin map if top)   (fpga-architect)
-  plan.md      the approved plan                           (fpga-plan)   ← plan gate
-  rtl/         custom VHDL                                 (fpga-rtl)
-  tb/          cocotb tests + Makefile                     (fpga-testbench)
-  tcl/         Vivado IP generation Tcl                    (fpga-ip)
-  bd/          Xilinx block design Tcl                     (fpga-blockdesign)
-  sim/         run scripts, results.xml, logs             (fpga-questa)
-  xdc/         constraints (top only)                      (fpga-toplevel)
-  impl/        build.tcl + run_sources.tcl + run_constraints.tcl (top only)
+  spec.md                input requirements doc (never modified)
+  architecture.md        manifest (status, deps, ports) + spec   (fpga-architect / fpga-review)
+  plan.md        the approved plan                           (fpga-plan)   ← plan gate
+  test_plan.md   collection of tests & pass criteria         (fpga-testbench)
+  test_report.md list of passed/failed tests                 (fpga-review)
+  rtl/           custom VHDL                                 (fpga-rtl)
+  tb/            cocotb tests + Makefile                     (fpga-testbench)
+  tcl/           Vivado IP generation Tcl                    (fpga-ip)
+  bd/            Xilinx block design Tcl                     (fpga-blockdesign)
+  sim/           run scripts, results.xml, logs             (fpga-questa)
+  xdc/           constraints (top only)                      (fpga-toplevel)
+  impl/          build.tcl + run_sources.tcl + run_constraints.tcl (top only)
 ```
 
 ## Skills
 
 | Skill | Role | Produces |
 |---|---|---|
-| `fpga-architect` | requirements, vendor, unit manifest, hierarchy | `spec.md`, `unit.md` |
+| `fpga-architect` | requirements, vendor, unit manifest, hierarchy | `architecture.md` |
 | `fpga-plan` | the plan + approval gate | `plan.md` |
 | `fpga-ip` | resolve/config vendor IP | `tcl/build_ip.tcl` |
 | `fpga-blockdesign` | Xilinx BD in Tcl | `bd/build_bd.tcl` |
 | `fpga-rtl` | custom VHDL + sub-unit instantiation | `rtl/*.vhd` |
-| `fpga-testbench` | cocotb testbench (first), hierarchy-aware | `tb/*.py`, `tb/Makefile` |
-| `fpga-questa` | Questa run scripts | `sim/*` |
-| `fpga-review` | read results, repair, stamp VALIDATED | fixes, `unit.md` status |
+| `fpga-testbench` | test plan ahead of testing, test-by-test criteria, cocotb tests | `test_plan.md`, `tb/*.py`, `tb/Makefile` |
+| `fpga-questa` | Questa run scripts (supports test-by-test) | `sim/*` |
+| `fpga-review` | read results, create test report, repair, stamp VALIDATED | `test_report.md`, fixes, `architecture.md` status |
 | `fpga-toplevel` | pins → constraints + non-project build + top sim | `xdc/*`, `impl/*` |
 | `fpga-critic` | isolated simulation failure & waveform diagnosis | targeted diagnosis, root cause |
 

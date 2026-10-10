@@ -28,3 +28,8 @@ write any files.
 ## Next
 
 `/fpga-blockdesign` (Xilinx) to wire the IP in, then `/fpga-rtl`.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

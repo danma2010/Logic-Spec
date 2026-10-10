@@ -1,6 +1,6 @@
 ---
 name: fpga-architect
-description: Capture FPGA design requirements from a natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/spec.md and designs/<name>/unit.md.
+description: Capture FPGA design requirements from a natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/spec.md.
 ---
 
 # FPGA Architect
@@ -12,9 +12,9 @@ Write no HDL, Tcl, or testbench code here.
 
 1. Ask for a short unit `<name>` if not given (directory-safe).
 2. Extract summary, external interfaces, and functional requirements.
-3. **Hierarchy resolution.** Scan `designs/*/unit.md`. For each requirement,
+3. **Hierarchy resolution.** Scan `designs/*/spec.md`. For each requirement,
    decide whether it is met by:
-   - an existing unit whose `unit.md` is `status: validated` → reuse it (record
+   - an existing unit whose `spec.md` is `status: validated` → reuse it (record
      it in `dependencies`), or
    - a vendor IP (keep it **abstract**, e.g. "dual-clock FIFO 512×64"), or
    - new custom logic.
@@ -30,10 +30,7 @@ Write no HDL, Tcl, or testbench code here.
 
 ## Outputs
 
-`designs/<name>/spec.md` (requirements, vendor + rationale, interfaces, abstract
-IP, acceptance criteria, and — for top — the pin map).
-
-`designs/<name>/unit.md` from `templates/unit.md`:
+Produces a single file `designs/<name>/spec.md` based on `templates/spec.md`. The frontmatter should contain the manifest data:
 
 ```markdown
 ---
@@ -51,3 +48,8 @@ validated: {}
 ## Next
 
 `/fpga-plan`. Do not generate any code yet.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

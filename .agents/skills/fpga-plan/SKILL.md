@@ -5,7 +5,7 @@ description: Produce the design plan for a unit and open the approval gate. Use 
 
 # FPGA Plan — the approval gate
 
-Read `designs/<name>/spec.md` and `designs/<name>/unit.md`. Produce a concrete,
+Read `designs/<name>/architecture.md`. Produce a concrete,
 buildable plan. Write no HDL or Tcl.
 
 ## plan.md front-matter (required)
@@ -19,7 +19,7 @@ status: pending
 ## plan.md sections
 
 1. **Module hierarchy** — VHDL top plus submodules. List each instantiated
-   **validated** sub-unit (from `unit.md` dependencies) and confirm each is
+   **validated** sub-unit (from `architecture.md` dependencies) and confirm each is
    `status: validated` — if any is not, stop and say so.
 2. **IP selection & configuration** — resolve each abstract IP to the chosen
    vendor; flag any forced-Verilog core.
@@ -37,3 +37,8 @@ status: pending
 Present a summary and ask the user to approve. On approval set
 `status: approved`. If changes are requested, revise and keep `status: pending`.
 **No generation skill may run until `status: approved`.**
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.

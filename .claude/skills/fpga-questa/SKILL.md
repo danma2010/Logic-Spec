@@ -28,3 +28,8 @@ description: Generate the Questa simulation scripts the user runs manually — t
 
 4. Tell the user where results appear (`results.xml`, `transcript`) and to paste
    them into `/fpga-review`.
+
+
+## Status Tracking (design_log.md)
+
+At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
