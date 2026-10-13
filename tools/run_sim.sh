@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # run_sim.sh <unit> [SIM]
-# NOTE: single-run smoke check (all tests in one simulator run). The framework's
-# standard runner is tools/run_tests.sh — test by test + sim/test_report.md.
-# Runs a unit's cocotb functional simulation and prints a one-line verdict the
-# auto loop can parse. Simulator-agnostic via cocotb's SIM (questa|questa-fli|
-# icarus|verilator|ghdl|...). Exit: 0 pass, 1 fail, 2 setup error.
+# Single-run SMOKE check: all cocotb tests in one simulator run, one-line verdict.
+# Not used for validation — the standard runner is tools/run_tests.sh (test by
+# test + sim/test_report.md). Simulator-agnostic via cocotb's SIM
+# (questa|icarus|verilator|ghdl|...). Exit: 0 pass, 1 fail, 2 setup error.
 set -uo pipefail
 
 UNIT="${1:?usage: run_sim.sh <unit> [SIM]}"
@@ -15,11 +14,12 @@ SIMDIR="${ROOT}/designs/${UNIT}/sim"
 mkdir -p "$SIMDIR"
 
 [ -d "$TB" ] || { echo "SIM FAIL: no tb dir at designs/${UNIT}/tb"; exit 2; }
+RES="${TB}/results.xml"
+rm -f "$RES"                       # never read a previous run's verdict
 
-echo "== sim: ${UNIT} (SIM=${SIM}) =="
+echo "== smoke sim: ${UNIT} (SIM=${SIM}) =="
 ( cd "$TB" && make SIM="$SIM" ) 2>&1 | tee "${SIMDIR}/last_sim.log"
 
-RES="${TB}/results.xml"
 [ -f "$RES" ] || { echo "SIM FAIL: no results.xml produced (compile/elab error — see sim/last_sim.log)"; exit 2; }
 
 python3 - "$RES" <<'PY'

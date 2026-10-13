@@ -1,34 +1,44 @@
 ---
 name: fpga-review
-description: Read simulation results the user pastes back (cocotb results.xml, Questa transcript, or waveform notes), drive the repair loop, and — on a passing run — stamp the unit as validated so it can be reused. Use after a manual Questa run.
+description: Read the per-test report (sim/test_report.md, or pasted results), repair failing tests one by one against their pass criteria, and — when every must test passes on current sources — apply gate 3 and stamp the unit validated in architecture.md. Use after the user has run tools/run_tests.sh.
 ---
 
-# FPGA Review & Repair
+# FPGA Review & Repair — gate 3
 
-Closes the generate → simulate → repair loop. The user runs the sim manually and
-pastes results here.
+Closes the generate → simulate → repair loop.
 
 ## Steps
 
-1. Read the pasted `results.xml` / transcript / waveform notes.
-2. **If everything passed:** update `designs/<name>/spec.md` to
-   `status: validated` and fill `validated: { date: <today>, tests: "<summary>" }`.
-   This is the **validation gate** — the unit may now be instantiated by other
-   units. Then suggest the next step (compose it into a higher unit, or, for the
-   top, run `/fpga-toplevel`).
-3. **If something failed:**
-   - Diagnose the root cause against the approved `plan.md` and the acceptance
-     criteria — RTL bug, IP misconfig, sub-unit integration, or testbench error.
-   - For deep transcript/waveform analysis, delegate to the `fpga-critic`
-     subagent.
-   - Apply a **minimal, targeted** fix; do not rewrite broadly. Leave `spec.md`
-     `status` unchanged (not validated).
-   - Print the exact re-run command and wait.
+1. Read `designs/<name>/sim/test_report.md` (+ `sim/tests/<ID>.log`). If the
+   user pasted `results.xml`/a transcript instead, use it, but ask for a
+   `tools/run_tests.sh` run before validating.
+2. **Failing tests, in plan order.** For each FAIL / ERROR / STALE:
+   - diagnose against that test's pass criterion in `testplan.md`, the AC it
+     covers, and `plan.md` — RTL bug, IP misconfig, sub-unit integration,
+     testbench bug, or sim setup;
+   - for deep log/waveform analysis delegate to `fpga-critic`;
+   - apply a **minimal, targeted** fix. Never weaken a pass criterion or
+     delete a test to get a pass — that is a test-plan change (back to
+     `pending`, user approval);
+   - if the unit was `validated`, set it back to `generated` (see CLAUDE.md);
+   - print the re-run command for that test and wait:
+     `bash tools/run_tests.sh <name> questa <ID>`.
+3. **Validation (gate 3).** Only when the report's verdict is
+   `PASS — meets the validation gate` from a **full, default-configuration**
+   run (no `MAKE_ARGS`, no STALE rows): every `must` test PASS, every
+   non-passing `should` test waived in `testplan.md`, test plan approved. Then
+   set in `architecture.md`:
+   `status: validated`,
+   `validated: { date: <today>, tests: "<n>/<n> must PASS", report: sim/test_report.md }`.
+   Suggest the next step (compose into a higher unit, or `fpga-toplevel`).
 
-Never claim to have run the simulation. Never stamp `validated` without a passing
-result in hand.
+Never claim to have run a simulation. Never stamp `validated` without that
+report in hand.
 
+## Design log
 
-## Status Tracking (design_log.md)
-
-At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
+Prepend an entry to `designs/<name>/design_log.md` (format:
+`templates/design_log.md`): same cycle number while the unit is in the same
+design round, +1 when a new round starts (e.g. after a validated unit is
+changed). Record the stage completed, unit status, plan / test-plan status and
+test results.

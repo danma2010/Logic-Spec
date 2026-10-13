@@ -1,71 +1,75 @@
 ---
 name: fpga-auto
-description: Opt-in automatic mode for the verify loop. When explicitly invoked, Claude Code runs the prepared functional simulation (any cocotb simulator) and an out-of-context synthesis check itself, via Bash, and iterates generate → sim → repair without manual paste-back. Bounded and guard-railed; stops for user confirmation before stamping a unit validated. Does not run implementation, bitstream, or hardware.
+description: Opt-in automatic mode for the verify loop. Only when the user explicitly invokes it, the agent runs tools/run_tests.sh (test by test, report) and an out-of-context synthesis check itself and iterates generate → sim → repair without manual paste-back. Bounded and guard-railed; asks the user to confirm before stamping a unit validated. Never runs implementation, bitstream or hardware.
 ---
 
 # FPGA Auto Mode (opt-in)
 
-Runs the verify loop for a unit automatically inside Claude Code. This is the
-**only** mode allowed to execute EDA tools; the rest of the framework is manual.
+The **only** mode allowed to execute EDA tools; the rest of the framework is
+manual (CLAUDE.md rule 6).
 
 ## Preconditions (stop if unmet)
 
-- `designs/<unit>/spec.md` exists and `designs/<unit>/plan.md` is
-  `status: approved` (plan gate still applies).
-- RTL and a cocotb testbench exist (`/fpga-rtl`, `/fpga-testbench` have run).
-- For a `composite`, every dependency in `spec.md` is `status: validated`.
-- `Bash` is available and the simulator (and Vivado, for the synth check) are on
-  `PATH`. If not, stay in manual mode and say so.
+- `plan.md` and `testplan.md` are `status: approved` (gates 1 and 2 still apply).
+- RTL and the cocotb testbench exist; `python3 tools/make_report.py --check
+  designs/<unit>` prints `TESTPLAN OK`.
+- For a `composite`/`top`, every dependency is `status: validated`.
+- A shell is available and the simulator (and Vivado, for the synth check) are
+  on `PATH`; vendor libs are compiled if the unit uses them. If not, stay in
+  manual mode and say so.
 
 ## Scope (hard limits)
 
-- Runs **functional simulation** + an **out-of-context synthesis check** only.
+- Runs **functional simulation** (`tools/run_tests.sh`) and an **OOC synthesis
+  check** (`tools/run_synth_check.sh`) only.
 - **Never** runs implementation, place/route, bitstream, or anything touching
-  hardware — those stay manual and require explicit confirmation.
+  hardware.
 - Reports only **real** results from actual runs. Never fabricates a verdict.
 
 ## The loop (cap: 5 iterations by default)
 
-Announce the commands you will run, then iterate:
+Announce the commands, then iterate:
 
-1. **Simulate.** `bash tools/run_sim.sh <unit> [SIM]`. Read the `SIM PASS/FAIL`
-   line and `sim/last_sim.log`.
-2. **On SIM FAIL:** diagnose the first real failure against `plan.md` and the
-   acceptance criteria (delegate deep log/waveform reads to `fpga-critic`).
+1. **Test.** `bash tools/run_tests.sh <unit>` (default configuration). Read
+   `sim/test_report.md`.
+2. **On FAIL:** take the first failing `must` test in plan order; diagnose
+   against its pass criterion (delegate deep reads to `fpga-critic`).
    - Clear root cause + a **minimal** fix that does **not** change the unit's
-     interface → apply it, log it, and re-run (next iteration).
-   - Otherwise → **STOP and hand back** (see stop conditions).
-3. **On SIM PASS:** write `designs/<unit>/build/synth_sources.tcl` — `read_vhdl`
-   for the unit's `rtl/*.vhd` and each validated sub-unit's `rtl/` (bottom-up),
-   plus `read_ip`/`generate_target` for vendor IP — then
-   `bash tools/run_synth_check.sh <unit> [PART]`.
-   - `SYNTH FAIL` from an RTL synthesizability issue → minimal fix, re-run.
-   - `SYNTH FAIL` from timing/constraints/ambiguous, or `SYNTH PASS` → go to done.
-4. **Done (SIM PASS + SYNTH PASS):** stop the loop.
+     interface or the test plan → apply, log, re-run that test
+     (`run_tests.sh <unit> questa <ID>`), then the full suite.
+   - Otherwise → **stop and hand back**.
+3. **On report PASS:** write `designs/<unit>/build/synth_sources.tcl` in the
+   `templates/vivado/run_sources.tcl` format (paths relative to the file,
+   sub-units bottom-up, `read_ip` for generated IP), then
+   `bash tools/run_synth_check.sh <unit>` (TOP/PART from `architecture.md`).
+   - `SYNTH FAIL` from an RTL synthesizability issue → minimal fix, back to 1.
+   - Timing/constraint/ambiguous failure → stop and hand back.
+4. **Done** when the report verdict is PASS and `SYNTH PASS`.
 
-## Stop and hand back to the user when
+## Stop and hand back when
 
-- The iteration cap is reached without a clean result.
-- The same failure repeats after a fix (no progress).
-- The root cause is ambiguous, or the only fix would change the unit's
-  **interface/ports**.
-- The failure is non-functional (timing/resource) beyond this mode's scope.
+- the iteration cap is reached;
+- the same failure repeats after a fix;
+- the root cause is ambiguous, or the fix would change ports or the test plan;
+- the failure is non-functional (timing/resource).
 
-Summarize what happened and what you'd do next; do not keep looping.
+Summarize what happened and the next step; do not keep looping.
 
 ## Logging
 
-Append every command, verdict, and applied fix to
-`designs/<unit>/sim/auto_log.md` (one line per action), so the run is auditable.
+Append every command, verdict and applied fix to
+`designs/<unit>/sim/auto_log.md` (one line per action, timestamped).
 
 ## Confirmation before validate (required)
 
-When the loop finishes clean, **do not stamp `validated` automatically.** Present
-the summary (tests passed, synth clean, fixes applied, log path) and **ask the
-user to confirm.** Only on confirmation set `spec.md` → `status: validated` and
-fill `validated: { date, tests }`. Without confirmation, leave the status as is.
+Present the summary (report verdict, synth result, fixes, log path) and **ask
+the user to confirm.** Only then apply gate 3 exactly as `fpga-review` does
+(`status: validated`, `validated: {date, tests, report}`).
 
+## Design log
 
-## Status Tracking (design_log.md)
-
-At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
+Prepend an entry to `designs/<name>/design_log.md` (format:
+`templates/design_log.md`): same cycle number while the unit is in the same
+design round, +1 when a new round starts (e.g. after a validated unit is
+changed). Record the stage completed, unit status, plan / test-plan status and
+test results.

@@ -1,120 +1,118 @@
 # The Verify Loop
 
-Where the design gets checked against simulation — and why the loop pauses on
-every real tool run.
+Where a unit is checked against simulation, and why the loop pauses on every
+real tool run.
 
 ## The manual boundary
 
-The loop is **generate → simulate → repair**, and it is **human-gated**: Claude
-prepares the design and the scripts, **you** run Questa/Vivado, and the results
-come back to Claude. Claude never runs an EDA tool and never claims a run
-happened (enforced by `CLAUDE.md`). The loop therefore *pauses* at every real
-simulation — by design, because EDA execution is manual here.
+The loop is **generate → simulate → repair**, and it is **human-gated**: the
+agent prepares the design, the test plan, the testbench and the scripts;
+**you** run Questa/Vivado; the per-test report comes back to the agent. The
+agent never runs an EDA tool and never claims a run happened (rule 6 in
+`CLAUDE.md`/`AGENTS.md`) — except in the opt-in auto mode below.
 
 ## "Check" has two halves
 
-1. **Inside the simulation (your machine).** The **cocotb testbench** (`tb/*.py`,
-   written by `/fpga-testbench` from the spec's GIVEN/WHEN/THEN criteria) is what
-   actually checks the design's behaviour against expectation. It runs inside
-   Questa; the verdict lands in `results.xml` (xUnit) + the `transcript`. *This is
-   the design-vs-expected comparison.*
-2. **Around the simulation (Claude).** `/fpga-review` reads that verdict, checks
-   the design against the **simulation result**, correlates failures to `plan.md`
-   and the acceptance criteria (delegating deep transcript/waveform reads to the
-   `fpga-critic` subagent), applies a minimal fix, and prints the re-run command.
-   *This is the loop controller.*
+1. **Inside the simulation (your machine).** Each cocotb test (`tb/*.py`,
+   written by `fpga-testbench` from one row of `testplan.md`) checks the
+   design against that test's **pass criterion**. `tools/run_tests.sh` runs the
+   tests one by one and `tools/make_report.py` turns the per-test results into
+   `sim/test_report.md`: PASS/FAIL/ERROR/STALE per test, seed, log, AC
+   coverage, and a verdict. *This is the design-vs-expected comparison.*
+2. **Around the simulation (the agent).** `fpga-review` reads that report,
+   takes failing tests in plan order, diagnoses each against its pass
+   criterion (deep transcript/waveform reads go to `fpga-critic`), applies a
+   minimal fix and prints the re-run command. When the verdict is PASS it
+   applies gate 3. *This is the loop controller.*
 
 ## State diagram
 
 ```
-                 ┌────────────────────────────────────────────────┐
-   generate      ▼                                                 │ repair (minimal fix)
- ┌───────────────────────────┐   you run     ┌──────────────┐      │
- │ /fpga-rtl  /fpga-testbench │──────────────▶│   Questa      │     │
- │ /fpga-ip   /fpga-questa    │  make / vsim  │  (your PC)    │     │
- └───────────────────────────┘               └──────┬───────┘      │
-        spec.md: generated                          │ results.xml   │
-                                                     │ transcript    │
-                                            paste    ▼               │
-                                              ┌──────────────┐       │
-                                     ────────▶│ /fpga-review │───────┘
-                                              │  (+ critic)  │   FAIL
-                                              └──────┬───────┘
-                                                     │ PASS
-                                                     ▼
-                                        spec.md: status = validated
+                 ┌──────────────────────────────────────────────────────┐
+   generate      ▼                                                       │ repair (minimal fix)
+ ┌──────────────────────────────┐  you run              ┌────────────┐   │
+ │ fpga-rtl    fpga-testbench    │  run_tests.sh <unit>  │  Questa    │   │
+ │ fpga-ip     fpga-questa       │──────────────────────▶│ test by    │   │
+ └──────────────────────────────┘                       │ test       │   │
+      architecture.md: generated                         └─────┬──────┘   │
+                                                               │ sim/tests/<ID>.xml|.log
+                                                               ▼          │
+                                                     sim/test_report.md   │
+                                                               │          │
+                                                               ▼          │
+                                                       ┌──────────────┐   │
+                                                       │ fpga-review  │───┘ FAIL / STALE
+                                                       │ (+ critic)   │
+                                                       └──────┬───────┘
+                                                              │ verdict PASS (all must, default config)
+                                                              ▼
+                                            architecture.md: status = validated
 ```
 
 ## The exact commands
 
 | Step | You run |
 |---|---|
-| Fast functional loop | `cd designs/<unit>/tb && make` |
-| Vendor-model path | see `designs/<unit>/sim/RUN.md` (`compile_simlib` → `build_ip` → `build_bd` → `make`) |
-| Paste back | copy `results.xml` (and/or `transcript`) into the chat for `/fpga-review` |
-| Re-run after a fix | re-run the same `make` (or `vsim -c -do sim/run_sim.tcl` for the UVM path) |
+| Vendor libs (once per tool version) | `QUESTA_BIN=… vivado -mode batch -source tools/compile_simlib.tcl` |
+| Lint the test plan | `python3 tools/make_report.py --check designs/<unit>` |
+| All tests + report | `bash tools/run_tests.sh <unit>` |
+| One test after a fix | `bash tools/run_tests.sh <unit> questa <ID>` |
+| Reproduce a seed | `RANDOM_SEED=<n> bash tools/run_tests.sh <unit> questa <ID>` |
+| Give the agent the result | point it at `designs/<unit>/sim/test_report.md` (or paste it) |
+| SV/UVM path | `vsim -c -do designs/<unit>/sim/run_sim.tcl` |
 
-Claude closes nothing on its own — after each fix it hands you the command and
-waits for the next paste.
+The report marks a result **STALE** when RTL, testbench, IP Tcl or the test
+plan changed after that test ran, so a fix always needs a re-run before gate 3.
+Validation needs a **full** run in the **default** configuration (no
+`MAKE_ARGS` such as `FAST=1`).
 
 ## Where each step lives
 
 | Step | Locus |
 |---|---|
-| Generate design + testbench | `/fpga-rtl`, `/fpga-ip`, `/fpga-blockdesign`, `/fpga-testbench` |
-| Prepare sim scripts | `/fpga-questa` |
-| **Run the sim** | **you** (Questa) |
-| Check result, diagnose, fix, stamp | `/fpga-review` (+ `fpga-critic`) |
-| Record pass | `spec.md` → `status: validated` |
+| Plan the tests | `fpga-testplan` → `testplan.md` (gate 2) |
+| Generate design + testbench | `fpga-rtl`, `fpga-ip`, `fpga-blockdesign`, `fpga-testbench` |
+| Prepare sim scripts / instructions | `fpga-questa` |
+| **Run the tests** | **you** (`tools/run_tests.sh`) |
+| Check report, diagnose, fix, stamp | `fpga-review` (+ `fpga-critic`) |
+| Record pass | `architecture.md` → `status: validated` |
 
 ## The loop recurs at every hierarchy level
 
-Same `/fpga-review` locus each time — only the DUT scope grows:
-
-- **leaf** — run the loop until the unit is `validated`.
-- **composite** — run it again as an **integration test** over the whole RTL
-  subtree (sub-units already validated standalone).
-- **top** — run it once more (top integration sim) before `/fpga-toplevel`
-  drives implementation to a bitstream.
+- **leaf** — until the unit is `validated`.
+- **composite** — again, as **integration tests** over the whole RTL subtree
+  (sub-units already validated standalone).
+- **top** — once more (top integration tests) before `fpga-toplevel` drives
+  implementation to a bitstream.
 
 ## Why the boundary is safe
 
-- **Never-claim-to-run** — Claude only prepares scripts and reads pasted results.
-- **Validation gate** — a unit is stamped `validated` only with a passing result
-  in hand, and only a `validated` unit may be reused.
+- **Never-claim-to-run** — the agent only prepares scripts and reads real results.
+- **Validation gate** — `validated` only with a passing, current, full report;
+  only a `validated` unit may be reused; changing it drops it to `generated`.
 
-## Automatic mode (opt-in) — `/fpga-auto`
+## Automatic mode (opt-in) — `fpga-auto`
 
-By default the loop is manual (above). When you invoke `/fpga-auto <unit>`, Claude
-Code runs the loop itself via Bash — the one exception to the manual boundary:
+When you explicitly invoke `fpga-auto <unit>`, the agent runs the loop itself:
 
 ```
-        ┌──────────────────────────────────────────────┐
-        ▼                                               │ minimal fix (no interface change)
- ┌───────────────┐  run   ┌───────────────┐  PASS  ┌───────────────┐        │
- │ generate/fix  │───────▶│ tools/run_sim │───────▶│ run_synth_    │──PASS─▶ done
- │  (Claude)     │        │  (Questa/…)   │        │ check (OOC)   │        │
- └───────────────┘        └──────┬────────┘        └──────┬────────┘        │
-        ▲                        │ FAIL                   │ FAIL (RTL)       │
-        └────────────────────────┴────────────────────────┴──────────────────┘
-                                   (cap: 5 iterations)
-                                          │ done
-                                          ▼
-                        summarize  →  ASK USER TO CONFIRM  →  spec.md: validated
+        ┌────────────────────────────────────────────────────────┐
+        ▼                                                         │ minimal fix (no port / test-plan change)
+ ┌───────────────┐  run  ┌──────────────────┐ PASS ┌────────────────────┐
+ │ generate/fix  │──────▶│ tools/run_tests  │─────▶│ tools/run_synth_   │──PASS─▶ done
+ │  (agent)      │       │ → test_report.md │      │ check (OOC)        │
+ └───────────────┘       └────────┬─────────┘      └─────────┬──────────┘
+        ▲                         │ FAIL                     │ FAIL (RTL)
+        └─────────────────────────┴──────────────────────────┘
+                                (cap: 5 iterations)
+                                         │ done
+                                         ▼
+                   summarize → ASK YOU TO CONFIRM → architecture.md: validated
 ```
 
-Scope and guardrails (see `.claude/skills/fpga-auto/SKILL.md`):
-
-- **Functional sim + OOC synth check only** — never implementation, bitstream, or
-  hardware.
-- **Plan gate still applies**; a composite's sub-units must already be validated.
-- **Bounded** (default 5 iterations) with a full audit trail in
-  `designs/<unit>/sim/auto_log.md`.
-- **Stops and hands back** on: cap reached, a repeated failure, an ambiguous
-  cause, an interface-changing fix, or a non-functional (timing/resource) failure.
-- **Confirmation before validate** — the loop finishing clean does *not*
-  auto-stamp `validated`; Claude asks you first.
-- Reports only **real** run results.
-
-Commands it runs: `bash tools/run_sim.sh <unit> [SIM]` and
-`bash tools/run_synth_check.sh <unit> [PART]`.
+Guardrails (`.claude/skills/fpga-auto/SKILL.md`): functional sim + OOC synth
+only (never implementation, bitstream or hardware); gates 1 and 2 still apply;
+bounded (default 5 iterations) with an audit trail in `sim/auto_log.md`; stops
+on a repeated or ambiguous failure, a port/test-plan change, or a
+timing/resource failure; asks before stamping `validated`; reports only real
+results.

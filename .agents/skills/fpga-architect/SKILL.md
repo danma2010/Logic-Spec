@@ -1,55 +1,63 @@
 ---
 name: fpga-architect
-description: Capture FPGA design requirements from an input spec.md file or natural-language request, choose the vendor target, and write the unit manifest. Resolves which requirements are met by existing validated units versus new logic or vendor IP. Use at the very start of a new unit, before planning or any code. Produces designs/<name>/architecture.md and never modifies the input spec.md.
+description: Turn a unit's input spec.md (or a natural-language request) into architecture.md — the unit manifest plus structured architecture with numbered acceptance criteria — choosing vendor, part, kind and dependencies. Use at the very start of a unit, before planning or any code. Never modifies spec.md.
 ---
 
 # FPGA Architect
 
-Turn the request or input `spec.md` into a structured architecture document, a vendor choice, and a unit manifest.
-Write no HDL, Tcl, or testbench code here. **Never modify the input `spec.md` file.**
+Derive `designs/<name>/architecture.md` from the input. Write no HDL, Tcl or
+testbench code. **Never modify `designs/<name>/spec.md`** — it is the user's input.
 
 ## Steps
 
-1. Ask for a short unit `<name>` if not given (directory-safe).
-2. Extract summary, external interfaces, and functional requirements from the user request or input `spec.md`.
-3. **Hierarchy resolution.** Scan `designs/*/architecture.md`. For each requirement,
-   decide whether it is met by:
-   - an existing unit whose `architecture.md` is `status: validated` → reuse it (record
-     it in `dependencies`), or
-   - a vendor IP (keep it **abstract**, e.g. "dual-clock FIFO 512×64"), or
+1. Get the unit `<name>` (directory-safe). If `designs/<name>/spec.md` exists,
+   read it as the input. If the user only gave a request in chat, write their
+   request verbatim into a new `spec.md` (from `templates/spec.md`) first — that
+   is the one time `spec.md` is created, and only from the user's own words.
+2. Extract summary, external interfaces, generics and functional requirements.
+3. **Hierarchy resolution.** Scan `designs/*/architecture.md`. For each
+   requirement decide whether it is met by:
+   - an existing unit → record it in `dependencies` and reuse its `top` entity.
+     If that unit is not yet `validated`, mark it **pending** in the
+     *Dependencies* section — allowed here, but `fpga-plan` cannot approve the
+     plan until it is validated;
+   - a vendor IP — keep it **abstract** (e.g. "dual-clock FIFO 512×64"); or
    - new custom logic.
-   Never plan to reuse a unit that is not `validated`.
-4. Choose exactly one vendor (`xilinx` or `altera`), justified by requirements.
-5. Set the unit `kind`: `leaf` (no sub-units), `composite` (instantiates
-   validated units), or `top` (the FPGA top — see step 7).
-6. Write **acceptance criteria as GIVEN/WHEN/THEN** so they map to testbench
-   checks.
-7. **If this is the top unit**, capture the **pin map** in `architecture.md` (or a file it
-   references): a table of `top port → package pin → IO standard`, plus clock
-   ports and periods. `fpga-toplevel` consumes this later.
+4. Choose exactly one vendor (`xilinx` or `altera`) and a `part`, justified by
+   the requirements.
+5. Set `kind`: `leaf`, `composite` (instantiates other units) or `top`.
+6. Name the unit's `top` entity (normally `<name>`). It must be an RTL entity in
+   `rtl/<top>.vhd`, never a block-design wrapper.
+7. Write **numbered acceptance criteria** `- **AC-n** GIVEN … WHEN … THEN …`,
+   each measurable, so `fpga-testplan` can trace tests to them.
+8. **Top unit only:** capture the pin map (`top port → package pin → IO
+   standard`) plus clocks and periods, or reference a file holding it.
 
-## Outputs
+## Output
 
-Produces a single file `designs/<name>/architecture.md` based on `templates/architecture.md`. The frontmatter should contain the manifest data:
+`designs/<name>/architecture.md` from `templates/architecture.md`, front-matter:
 
-```markdown
----
+```yaml
 name: <name>
 vendor: xilinx | altera
+part: <part>
 kind: leaf | composite | top
+top: <entity>
 status: planned
-dependencies: [ <validated unit names> ]
+dependencies: [ <unit names> ]
 ports:
   - { name: ..., dir: in|out, width: N }
 validated: {}
----
 ```
 
 ## Next
 
-`/fpga-plan`. Do not generate any code yet.
+`fpga-plan`. Do not generate any code yet.
 
+## Design log
 
-## Status Tracking (design_log.md)
-
-At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
+Prepend an entry to `designs/<name>/design_log.md` (format:
+`templates/design_log.md`): same cycle number while the unit is in the same
+design round, +1 when a new round starts (e.g. after a validated unit is
+changed). Record the stage completed, unit status, plan / test-plan status and
+test results.

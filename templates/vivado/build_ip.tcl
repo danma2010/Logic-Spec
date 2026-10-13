@@ -1,28 +1,29 @@
-# build_ip.tcl — generate & configure Xilinx IP (non-project / batch mode)
+# build_ip.tcl — generate & configure vendor IP for one unit (Vivado batch).
+# Emitted to designs/<unit>/tcl/build_ip.tcl by fpga-ip from the approved plan.
 #
-# RUN MANUALLY:
-#   vivado -mode batch -source build_ip.tcl
+# RUN MANUALLY (from any directory):
+#   vivado -mode batch -source designs/<unit>/tcl/build_ip.tcl
 #
-# The fpga-ip skill fills this in per design from the approved plan. The block
-# below is an example that resolves the abstract IP "dual-clock FIFO 512x64".
+# Output: designs/<unit>/tcl/ip/<module>/<module>.xci (+ generated targets),
+# which run_sources.tcl / synth_sources.tcl read with read_ip.
 
-set PART    "xc7a35ticsg324-1L"   ;# <TARGET_PART>
-set IP_DIR  "./ip"
-set OUT_DIR "./ip/gen"
-file mkdir $OUT_DIR
+set SCRIPT_DIR [file normalize [file dirname [info script]]]
+set PART    "<PART>"              ;# = architecture.md `part:`
+set IP_DIR  $SCRIPT_DIR/ip
+file mkdir $IP_DIR
+create_project -in_memory -part $PART
 
-set_part $PART
-
-# --- Example IP ------------------------------------------------------------
+# --- Example: abstract "dual-clock FIFO 512x64, FWFT" -> FIFO Generator -------
 create_ip -name fifo_generator -vendor xilinx.com -library ip \
-          -module_name fifo_512x64 -dir $IP_DIR
+          -module_name fifo_512x64 -dir $IP_DIR -force
 set_property -dict [list \
     CONFIG.Fifo_Implementation {Independent_Clocks_Block_RAM} \
-    CONFIG.Input_Data_Width     {64} \
-    CONFIG.Input_Depth          {512} \
+    CONFIG.Performance_Options {First_Word_Fall_Through} \
+    CONFIG.Input_Data_Width    {64} \
+    CONFIG.Input_Depth         {512} \
 ] [get_ips fifo_512x64]
 generate_target all [get_ips fifo_512x64]
-# synth_ip [get_ips fifo_512x64]   ;# optional: pre-synthesize the IP
+# synth_ip [get_ips fifo_512x64]   ;# optional: pre-synthesize OOC
 # ---------------------------------------------------------------------------
 
-puts "IP generation complete."
+puts "IP generation complete: $IP_DIR"

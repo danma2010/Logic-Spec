@@ -3,7 +3,7 @@ use ieee.std_logic_1164.all;
 
 -- Simulation-only top: the REAL controller (axis_fifo_ctrl) wired to the
 -- behavioural FIFO model. cocotb drives this via s_axis / m_axis. The hardware
--- top is the block-design wrapper produced by bd/build_bd.tcl instead.
+-- top is rtl/axis_fifo_loopback.vhd (XPM FIFO). Used only by `make FAST=1`.
 entity sim_top is
   generic (
     DATA_WIDTH : positive := 64

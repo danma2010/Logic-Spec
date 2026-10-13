@@ -1,12 +1,12 @@
 ---
 name: fpga-plan
-description: Produce the design plan for a unit and open the approval gate. Use after fpga-architect and before ANY code generation. Writes designs/<name>/plan.md (status pending) covering module hierarchy (including instantiated validated sub-units), IP configuration, block-design topology, testbench strategy, and simulation setup, then asks the user to approve.
+description: Produce the design plan for a unit and open gate 1 (plan approval). Use after fpga-architect and before ANY code generation. Writes designs/<name>/plan.md (status pending) covering module hierarchy, sub-units, IP configuration, block-design topology, verification strategy and simulation setup, then asks the user to approve.
 ---
 
-# FPGA Plan — the approval gate
+# FPGA Plan — gate 1
 
-Read `designs/<name>/architecture.md`. Produce a concrete,
-buildable plan. Write no HDL or Tcl.
+Read `designs/<name>/architecture.md` (and `spec.md` for context). Produce a
+concrete, buildable plan. Write no HDL or Tcl.
 
 ## plan.md front-matter (required)
 
@@ -18,27 +18,38 @@ status: pending
 
 ## plan.md sections
 
-1. **Module hierarchy** — VHDL top plus submodules. List each instantiated
-   **validated** sub-unit (from `architecture.md` dependencies) and confirm each is
-   `status: validated` — if any is not, stop and say so.
+1. **Module hierarchy** — the unit's `top` entity (`rtl/<top>.vhd`) and its
+   submodules. List each instantiated sub-unit from `dependencies` with its
+   current status. **Any sub-unit not `validated` blocks approval** — say so
+   and keep the plan `pending`.
 2. **IP selection & configuration** — resolve each abstract IP to the chosen
-   vendor; flag any forced-Verilog core.
-3. **Block-design topology** — Xilinx IP Integrator BD (for vendor IP within this
-   unit); Altera Platform Designer. Unit-to-unit composition is direct RTL, not
-   BD.
-4. **Testbench strategy** — cocotb on Questa by default; for a composite/top,
-   describe the **integration test** at this unit's interface (sub-units keep
-   their own standalone validation).
-5. **Simulation setup** — compile order (sub-unit RTL first), vendor libs via
-   `-L`, cocotb `Makefile` vs `run_sim.tcl`.
+   vendor (FIFO Generator, XPM macro, …); flag any forced-Verilog core.
+3. **Block-design topology** (optional) — only for vendor IP wired *inside*
+   this unit; the BD wrapper is instantiated by the RTL top. Unit-to-unit
+   composition is always direct RTL.
+4. **Verification strategy** — cocotb on Questa by default (UVM only if
+   flagged); the default testbench configuration (real `top`, real IP models);
+   any behavioural stand-ins for a fast loop; for a composite/top, the
+   **integration test** at this unit's interface. The detailed test list comes
+   later in `fpga-testplan`.
+5. **Simulation setup** — compile order (sub-units first), vendor libs from
+   `simlibs/questa` (`tools/compile_simlib.tcl`), runner `tools/run_tests.sh`.
 
 ## The gate
 
 Present a summary and ask the user to approve. On approval set
-`status: approved`. If changes are requested, revise and keep `status: pending`.
+`status: approved`. If changes are requested, revise and keep `pending`. Any
+later change to the plan's content sets it back to `pending`.
 **No generation skill may run until `status: approved`.**
 
+## Next
 
-## Status Tracking (design_log.md)
+`fpga-testplan`.
 
-At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
+## Design log
+
+Prepend an entry to `designs/<name>/design_log.md` (format:
+`templates/design_log.md`): same cycle number while the unit is in the same
+design round, +1 when a new round starts (e.g. after a validated unit is
+changed). Record the stage completed, unit status, plan / test-plan status and
+test results.

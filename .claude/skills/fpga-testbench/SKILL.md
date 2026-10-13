@@ -1,43 +1,53 @@
 ---
 name: fpga-testbench
-description: Write the testbench FIRST from the acceptance criteria — cocotb (Python) on Questa by default, UVM only if the plan flags it. Generates the cocotb tests and the manual Questa run Makefile. Use after the plan is approved; ideally before or alongside the RTL (verification-first).
+description: Write the cocotb testbench from the approved test plan — exactly one @cocotb.test per testplan.md entry, with the same function name and the pass criterion coded as assertions — plus tb/Makefile for Questa. UVM only if the plan flags it. Use after gate 2; ideally before or alongside the RTL (verification-first).
 ---
 
 # FPGA Testbench (verification-first)
 
 ## Gate check (do this first)
 
-Require `designs/<name>/plan.md` with `status: approved`. Otherwise stop.
+Require `designs/<name>/plan.md` **and** `designs/<name>/testplan.md`, both
+`status: approved`. Otherwise stop and name the missing gate.
 
 ## Steps
 
-1. Turn each **acceptance criterion** in `spec.md` into a cocotb test under
-   `designs/<name>/tb/`. Write these before/with the RTL.
-2. Drive the DUT top through its ports; a VHDL top talks to cocotb via Questa's
-   FLI. Vendor/forced-Verilog IP inside the DUT is simulated by Questa.
-3. **Hierarchy.** For a `composite`/`top` unit, this is an **integration test**:
-   include every instantiated sub-unit's `rtl/*.vhd` in the compile order
-   (sub-units first), reading the dependency list from `spec.md`. Sub-units keep
-   their own standalone validation; this test checks their composition.
-4. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`, filling
-   `TOPLEVEL`, `MODULE`, the full `VHDL_SOURCES` (subtree included), and
-   `-L <vendor_lib>`.
-5. Use SV/UVM only if the plan flags it (emit `run_sim.tcl` instead).
+1. For every row of `testplan.md` write one `@cocotb.test()` named exactly as
+   its `Function` column, in `designs/<name>/tb/test_<name>.py`. Put the test
+   ID and pass criterion in the docstring; code the criterion as assertions with
+   messages that state expected vs. actual. No extra tests outside the plan
+   (add them to the plan first).
+2. Drive the DUT through the unit's `top` ports (VHDL top ↔ cocotb via Questa
+   FLI/VHPI). Use reusable drivers/monitors; sample handshakes **at** the clock
+   edge (drive after `RisingEdge`, decide on the values that were present at
+   the edge — e.g. use `ReadOnly()` before sampling), so backpressure can't
+   duplicate or drop beats in the model.
+3. Use `random` seeded by cocotb (no private seeds) so `RANDOM_SEED`
+   reproduces a run.
+4. **Hierarchy:** for a `composite`/`top`, this is an integration test: compile
+   every sub-unit's `rtl/*.vhd` first (bottom-up, from `dependencies`).
+5. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`: the
+   **default** configuration must use the unit's real `top` and real IP models
+   (this is what gate 3 accepts). A behavioural fast loop is allowed only as an
+   opt-in make variable (e.g. `FAST=1`).
+6. Lint: `python3 tools/make_report.py --check designs/<name>` → `TESTPLAN OK`
+   (now also checks every planned test exists in `tb/`).
+7. SV/UVM only if the plan flags it (emit `sim/run_sim.tcl` via `fpga-questa`).
 
 ## Manual run (print; do not run)
 
 ```
-cd designs/<name>/tb && make          # cocotb on Questa
+bash tools/run_tests.sh <name>             # test by test → sim/test_report.md
 ```
-
-Results: `results.xml` + transcript. Bring them to `/fpga-review`.
 
 ## Next
 
-`/fpga-questa` to (re)generate sim scripts and the one-time lib compile, then run
-manually and bring results to `/fpga-review`.
+`fpga-questa`, then the user runs the tests and comes back to `fpga-review`.
 
+## Design log
 
-## Status Tracking (design_log.md)
-
-At the end of your execution, you must update `designs/<name>/design_log.md`. Prepend the new status data to the TOP of the file. Include the current cycle version number (determine the current cycle from the existing file and increment if starting a new design round/iteration), the stage you just completed, the overall design status, and the status of the test plan.
+Prepend an entry to `designs/<name>/design_log.md` (format:
+`templates/design_log.md`): same cycle number while the unit is in the same
+design round, +1 when a new round starts (e.g. after a validated unit is
+changed). Record the stage completed, unit status, plan / test-plan status and
+test results.

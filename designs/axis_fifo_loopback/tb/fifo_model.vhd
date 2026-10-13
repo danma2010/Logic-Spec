@@ -3,8 +3,8 @@ use ieee.std_logic_1164.all;
 
 -- Behavioural (simulation-only) first-word-fall-through FIFO with independent
 -- read/write clocks. This is a FUNCTIONAL stand-in for the fast cocotb loop, not
--- a timing or metastability model of the real IP. For full verification, replace
--- the instance with the generated fifo_512x64 (see sim/RUN.md).
+-- a timing or metastability model of the real FIFO. Used only by `make FAST=1`;
+-- validation runs against the real top with xpm_fifo_async (see sim/RUN.md).
 entity fifo_model is
   generic (
     DATA_WIDTH : positive := 64;
