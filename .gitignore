@@ -1,10 +1,22 @@
-designs/*/sim/
-designs/*/ip/
-__pycache__/
+#--- FPGA framework: generated / tool output ---
+# keep sim/RUN.md, sim/run_sim.tcl and sim/test_report.md|json under version control
+designs/*/sim/tests/
+designs/*/sim/last_sim.log
+designs/*/sim/work/
+designs/*/tb/sim_build/
+designs/*/tb/modelsim.ini
+designs/*/tcl/ip/
+designs/*/bd/*_bd/
+designs/*/build/
+designs/*/impl/out/
+simlibs/
 *.wlf
+*.vcd
+*.jou
+*.str
 transcript
 results.xml
-questa_libs/
+.Xil/
 
 
 
