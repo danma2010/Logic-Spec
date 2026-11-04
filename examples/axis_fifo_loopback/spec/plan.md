@@ -43,5 +43,5 @@ None.
 ## 5. Simulation setup
 
 - Compile order: `axis_fifo_ctrl.vhd`, `axis_fifo_loopback.vhd` (VHDL-2008).
-- Vendor libs: `simlibs/questa` from `tools/compile_simlib.tcl` (`-L xpm`).
-- Runner: `bash tools/run_tests.sh axis_fifo_loopback` → `sim/test_report.md`.
+- Vendor libs: `<LOGIC_SPEC>/simlibs/questa` from `tools/compile_simlib.tcl` (`-L xpm`).
+- Runner: `bash <LOGIC_SPEC>/tools/run_tests.sh .` → `sim/test_report.md`.

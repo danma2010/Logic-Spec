@@ -1,18 +1,19 @@
 ---
-name: <unit>              # = directory name under designs/
+name: <unit>              # = design folder name
 vendor: xilinx            # xilinx | altera
 part: <part>              # e.g. xc7a35ticsg324-1L — used by synth check / build
 kind: leaf                # leaf | composite | top
 top: <unit>               # top entity of this unit, in rtl/<top>.vhd (never a BD wrapper)
 status: planned           # planned | generated | validated   (see CLAUDE.md lifecycle)
-dependencies: []          # sub-unit names, instantiated by direct RTL
+dependencies: []          # design folders, relative to this design (e.g. ../axis_fifo); direct RTL instantiation
 ports: []                 # - { name: <port>, dir: in|out, width: <N> }
 validated: {}             # { date: <YYYY-MM-DD>, tests: "<n/n must PASS>", report: sim/test_report.md }
 ---
 
 # <unit> — Architecture
 
-Derived from `spec.md` (input, never modified). `status` advances
+Derived from `spec_work.md` (the approved refined spec, gate 0; `spec.md`
+is the original input, never modified). `status` advances
 planned → generated → validated; only a `validated` unit may be instantiated by
 another unit.
 
@@ -34,7 +35,7 @@ One-line purpose.
   - sub-unit / custom module / vendor IP ...
 
 ## Dependencies
-- `<unit>` — role. Status at architecture time: validated | **pending** (plan
+- `../<unit>` — role. Status at architecture time: validated | **pending** (plan
   cannot be approved until it is validated).
 
 ## Abstract IP

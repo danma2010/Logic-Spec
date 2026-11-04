@@ -2,7 +2,7 @@
 # Invoked by tools/run_synth_check.sh:
 #   vivado -mode batch -source templates/vivado/synth_check.tcl \
 #          -tclargs <TOP> <PART> <path/to/synth_sources.tcl>
-# synth_sources.tcl is written by fpga-auto in designs/<unit>/build/ using the
+# synth_sources.tcl is written by fpga-auto in <design>/build/ using the
 # run_sources.tcl format (paths relative to its own location).
 
 set TOP     [lindex $argv 0]

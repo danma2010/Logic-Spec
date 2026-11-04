@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
-# run_sim.sh <unit> [SIM]
+# run_sim.sh <design> [SIM]      (<design> = a design folder, e.g. `.`)
 # Single-run SMOKE check: all cocotb tests in one simulator run, one-line verdict.
 # Not used for validation — the standard runner is tools/run_tests.sh (test by
 # test + sim/test_report.md). Simulator-agnostic via cocotb's SIM
 # (questa|icarus|verilator|ghdl|...). Exit: 0 pass, 1 fail, 2 setup error.
 set -uo pipefail
 
-UNIT="${1:?usage: run_sim.sh <unit> [SIM]}"
+DESIGN="${1:?usage: run_sim.sh <design_dir> [SIM]}"
 SIM="${2:-questa}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TB="${ROOT}/designs/${UNIT}/tb"
-SIMDIR="${ROOT}/designs/${UNIT}/sim"
-mkdir -p "$SIMDIR"
+[ -d "$DESIGN" ] || { echo "SIM FAIL: no design folder at ${DESIGN}"; exit 2; }
+U="$(cd "$DESIGN" && pwd)"
+UNIT="$(basename "$U")"
+TB="${U}/tb"
+SIMDIR="${U}/sim"
 
-[ -d "$TB" ] || { echo "SIM FAIL: no tb dir at designs/${UNIT}/tb"; exit 2; }
+[ -d "$TB" ] || { echo "SIM FAIL: no tb dir at ${TB}"; exit 2; }
+mkdir -p "$SIMDIR"
 RES="${TB}/results.xml"
 rm -f "$RES"                       # never read a previous run's verdict
 

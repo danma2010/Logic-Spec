@@ -1,229 +1,584 @@
 # Logic-Spec
 
 **A spec-driven, gated, hierarchical FPGA design framework for coding agents.**
-The agent turns your requirements into an architecture, a plan, a test plan,
+
+You write the requirements. The agent reviews them, asks about whatever is
+missing, and turns the refined spec into an architecture, a plan, a test plan,
 VHDL, vendor-IP Tcl and cocotb testbenches, plus the scripts to build and
-simulate them. **You run Questa and Vivado** (or opt in to `fpga-auto`, which
-may run simulation and an OOC synth check for you).
+simulate them. **You run Questa and Vivado**, or you opt in to `fpga-auto`,
+which may run simulation and an OOC synth check for you. Nothing moves forward
+without your approval at four gates.
 
-Works with **Claude Code** (`CLAUDE.md` + `.claude/`) and **Antigravity**
-(`AGENTS.md` + `.agents/`). `CLAUDE.md` and `.claude/` are the source of truth;
-`bash tools/sync_agents.sh` regenerates the Antigravity copy.
-
----
-
-## Mental model
-
-- **Rules** — `CLAUDE.md` / `AGENTS.md`: the data model, the three gates, the
-  status lifecycle, HDL/vendor policy, manual-EDA rule.
-- **Skills** — `.claude/skills/` (mirrored to `.agents/skills/`): one per
-  workflow role (`fpga-architect`, `fpga-plan`, …). Invoke as `/fpga-plan` in
-  Claude Code, or by name in Antigravity.
-- **Critic** — `fpga-critic`: isolated, read-only failure analysis (a subagent
-  in Claude Code, a skill in Antigravity).
-- **Tools** — `tools/`: the test runner, report builder, synth check,
-  simulation-library compile and the platform sync.
-- **Templates** — `templates/`: starting points the skills fill in.
-
-Rationale: `docs/framework-design-spec.md`. The verify loop: `docs/LOOP.md`.
+Works with **Claude Code** and **Antigravity**.
 
 ---
 
-## Install
+## Contents
 
-1. Clone/copy this repository as your project root.
-2. Open it in Claude Code (`CLAUDE.md` loads automatically; type `/` to see
-   the `fpga-*` skills) or in Antigravity (`AGENTS.md`, `.agents/`).
-3. Local tooling (the agent never needs it unless you use `fpga-auto`):
-   Vivado, Questa, Python 3 with cocotb (`pip install cocotb`).
-4. Once per Vivado/Questa version, compile the vendor simulation libraries:
-   ```
-   QUESTA_BIN=<questa>/bin vivado -mode batch -source tools/compile_simlib.tcl
-   ```
-
----
-
-## Units, files and status
-
-Every design is a **unit** in `designs/<name>/`:
-
-| File | Role |
-|---|---|
-| `spec.md` | **your input** requirements — never modified by the framework |
-| `architecture.md` | the **manifest** (`name, vendor, part, kind, top, status, dependencies, ports, validated`) + architecture + numbered acceptance criteria `AC-n` (+ pin map for the top) |
-| `plan.md` | design plan — gate 1 |
-| `testplan.md` | tests `T01…` with pass criteria — gate 2 |
-| `design_log.md` | stage log, newest first |
-| `sim/test_report.md` | per-test PASS/FAIL report — evidence for gate 3 |
-
-`kind`: `leaf` (RTL + vendor IP) · `composite` (instantiates validated units) ·
-`top` (the FPGA top, interface = pins). Units are reused by **direct RTL
-instantiation** of the child's `top` entity — never as IP or BD containers.
-
-`status`: `planned` (architecture written) → `generated` (RTL written) →
-`validated` (gate 3). Changing a validated unit drops it back to `generated`.
-
-## The three gates
-
-1. **Plan** — no RTL/IP/BD/testbench/Tcl before `plan.md` is `approved`, and a
-   plan can't be approved while any dependency is not `validated`.
-2. **Test plan** — no testbench code before `testplan.md` is `approved`. Every
-   `AC-n` is covered by at least one `must` test with a measurable pass
-   criterion. Editing the test plan resets it to `pending`.
-3. **Validation** — `status: validated` only when `sim/test_report.md` shows
-   every `must` test PASS on current sources in the default testbench
-   configuration (real top, real IP models), with `should` failures waived.
+1. [Concepts](#1-concepts)
+2. [Install (once)](#2-install-once)
+3. [The workflow at a glance](#3-the-workflow-at-a-glance)
+4. [Walkthrough: from spec to validated unit](#4-walkthrough-from-spec-to-validated-unit)
+5. [Building a hierarchy and the FPGA top](#5-building-a-hierarchy-and-the-fpga-top)
+6. [Automatic mode (opt-in)](#6-automatic-mode-opt-in)
+7. [When something changes](#7-when-something-changes)
+8. [Reference](#8-reference)
+9. [Maintaining the framework](#9-maintaining-the-framework)
 
 ---
 
-## Workflow
+## 1. Concepts
 
-```
-per unit
-  fpga-architect   spec.md → architecture.md
-  fpga-plan        → plan.md       PENDING → you approve → APPROVED     ← gate 1
-  fpga-testplan    → testplan.md   PENDING → you approve → APPROVED     ← gate 2
-  fpga-ip          → tcl/build_ip.tcl         (you run in Vivado)
-  fpga-blockdesign → bd/build_bd.tcl          (optional, Xilinx, inside the unit)
-  fpga-rtl         → rtl/*.vhd                status → generated
-  fpga-testbench   → tb/*.py + tb/Makefile    one cocotb test per test-plan row
-  fpga-questa      → sim/RUN.md (+ run_sim.tcl for UVM)
-     ── you run:  bash tools/run_tests.sh <name>   → sim/test_report.md ──
-  fpga-review      → repair failing tests; all must PASS → validated     ← gate 3
+### Framework vs. design
 
-at the top
-  fpga-toplevel    → xdc/<top>_pins.xdc + impl/build.tcl (+ run_sources.tcl, run_constraints.tcl)
-     ── you run:  vivado -mode batch -source designs/<top>/impl/build.tcl ──
-
-opt-in
-  fpga-auto        → runs run_tests.sh + run_synth_check.sh itself (bounded), asks before validating
-```
-
-### Step by step
-
-1. **Input.** Write `designs/<name>/spec.md` (template: `templates/spec.md`) —
-   or describe the unit in chat and `fpga-architect` saves your words there.
-2. **Architect.** `fpga-architect` → `architecture.md`: vendor, part, kind,
-   top entity, dependencies, abstract IP, `AC-n`.
-3. **Plan (gate 1).** `fpga-plan` → `plan.md` (`pending`). Review; approve.
-4. **Test plan (gate 2).** `fpga-testplan` → `testplan.md`: features, tests
-   `T01…`, priority, pass criterion, AC trace. Lint with
-   `python3 tools/make_report.py --check designs/<name>`; approve.
-5. **IP / BD.** `fpga-ip` (and `fpga-blockdesign` if the plan needs a BD).
-   Run the printed `vivado -mode batch -source …` commands.
-6. **RTL + testbench.** `fpga-rtl` (unit top in `rtl/<top>.vhd`) and
-   `fpga-testbench` (one cocotb test per test-plan row).
-7. **Simulate.** `fpga-questa` prints the commands; you run
-   `bash tools/run_tests.sh <name>`. Each test runs in its own simulator
-   invocation, in plan order; the result is `sim/test_report.md` with seeds,
-   logs, AC coverage and a verdict.
-8. **Review (gate 3).** `fpga-review` reads the report, fixes failing tests
-   one by one (with `fpga-critic` for deep logs) and, when the verdict is
-   PASS, stamps `validated`.
-9. **Compose.** A higher unit lists the validated unit in `dependencies`;
-   `fpga-rtl` instantiates its `top` entity. Repeat 1–8 for the composite (its
-   tests are integration tests over the whole subtree).
-10. **Top level.** Mark the highest unit `kind: top` with a pin map; run
-    `fpga-toplevel`, then the printed Vivado build.
-
----
-
-## Two test runners — which one to use
-
-| | `tools/run_tests.sh` — **the standard runner** | `tools/run_sim.sh` — **quick smoke check** |
+| | What | Where |
 |---|---|---|
-| Purpose | Verify a unit against its approved test plan | Fast "does it compile and pass?" feedback while iterating |
-| How it runs | One simulator invocation **per test**, in plan order | **One** simulator invocation for all tests (`make` in `tb/`) |
-| Test-plan gate | Lints `testplan.md` and refuses to run unless it is `approved` | Not checked — runs whatever cocotb tests exist in `tb/` |
-| Output | `sim/test_report.md` + `.json`: per-test result, seed, log, AC coverage, STALE detection, gate-3 verdict | One line (`SIM PASS: 4 tests, 0 failing`) + `sim/last_sim.log` |
-| Exit code | 0 gate met · 1 not met · 2 setup error | 0 pass · 1 fail · 2 setup error |
-| Counts for validation (gate 3) | **Yes** — full run, default configuration | **Never** |
-| Used by | you, `fpga-review`, `fpga-auto` | you only |
+| **Framework** | rules, skills, tools, templates, shared simulation libraries | this repository, installed once user-wide (`$LS` below) |
+| **Design** | one FPGA unit: its spec, documents, RTL, testbench, scripts | **its own folder, anywhere on disk** — one design = one folder |
 
-**Use `run_sim.sh` when** you are mid-fix and want the quickest possible
-feedback (one compile, one run), or for a quick try on another cocotb simulator
-before Questa is set up (`bash tools/run_sim.sh <unit> ghdl`).
+A design folder never lives inside the framework (except `examples/`). It
+loads the framework rules through two small **pointer files** at its root:
+`CLAUDE.md` (Claude Code) and `AGENTS.md` (Antigravity).
 
-**Use `run_tests.sh` for everything else** — and always before asking
-`fpga-review` to validate a unit. A green `run_sim.sh` is not evidence for
-gate 3; only `sim/test_report.md` from `run_tests.sh` is.
+### Inside a design folder
+
+```
+my_design/
+  CLAUDE.md  AGENTS.md     pointers to the framework rules
+  spec/                    ALL documents: spec.md, spec_work.md, architecture.md,
+                           plan.md, testplan.md, design_log.md
+  rtl/ tb/ tcl/ bd/ sim/   code and scripts, beside spec/
+  xdc/ impl/ build/
+```
+
+### Units and hierarchy
+
+Every design is a **unit** of one `kind`:
+
+- `leaf` — custom RTL and vendor IP only;
+- `composite` — also instantiates other, **validated** units;
+- `top` — the composite that is the FPGA top; its interface is the pins.
+
+A unit is reused by **direct RTL instantiation** of its `top` entity. A
+dependency is another design folder, written as a **relative path** (e.g.
+`../axis_fifo_loopback`).
+
+### Unit status
+
+```
+planned  ──fpga-rtl──▶  generated  ──gate 3──▶  validated
+(architecture written)  (RTL written)            (all must tests PASS)
+        ▲                                               │
+        └──────────── any change to rtl/, tb/, IP Tcl, testplan ─┘ (back to generated)
+```
+
+Only a `validated` unit may be instantiated by another unit.
+
+### The four gates
+
+| Gate | File | Blocks | Approved when |
+|---|---|---|---|
+| **0 — Spec** | `spec/spec_work.md` | every other step | you approve the refined spec, and `spec.md` hasn't changed since |
+| **1 — Plan** | `spec/plan.md` | all code generation | you approve the plan, and every dependency is `validated` |
+| **2 — Test plan** | `spec/testplan.md` | testbench code | you approve the test list; every `AC-n` has a `must` test |
+| **3 — Validation** | `sim/test_report.md` | reuse by other units | every `must` test PASSes on current sources, default configuration |
+
+Each document gate uses `status: pending → approved` in the file's
+front-matter. **Any edit to an approved document puts it back to `pending`.**
 
 ---
 
-## Directory layout
+## 2. Install (once)
 
-```
-designs/<name>/
-  spec.md  architecture.md  plan.md  testplan.md  design_log.md
-  rtl/       custom VHDL; rtl/<top>.vhd is the unit top       (fpga-rtl)
-  tb/        cocotb tests + Makefile                           (fpga-testbench)
-  tcl/       build_ip.tcl; generated IP in tcl/ip/             (fpga-ip)
-  bd/        build_bd.tcl (optional)                           (fpga-blockdesign)
-  sim/       RUN.md, run_sim.tcl (UVM)                         (fpga-questa)
-    tests/<ID>.log|.xml      per-test results                  (run_tests.sh)
-    test_report.md|.json     pass/fail report                  (make_report.py)
-    auto_log.md              auto-mode audit trail             (fpga-auto)
-  build/     OOC synth-check workspace                         (fpga-auto)
-  xdc/ impl/ constraints + non-project build (top only)        (fpga-toplevel)
-simlibs/questa/   vendor sim libraries, shared                 (tools/compile_simlib.tcl)
+Prerequisites: Git Bash (on Windows), Python 3, and for running simulations
+yourself: Questa, Vivado, cocotb (`pip install cocotb`).
+
+```bash
+# 1. clone the framework anywhere
+git clone <repo-url> C:/tools/Logic-Spec
+LS=C:/tools/Logic-Spec
+
+# 2. install it user-wide
+bash $LS/tools/install.sh
+
+# 3. once per Vivado/Questa version: compile the shared vendor sim libraries
+QUESTA_BIN=<questa>/bin vivado -mode batch -source $LS/tools/compile_simlib.tcl
+#   optional: FAMILY=artix7 to compile one family only (much faster)
 ```
 
-Every generated Tcl script resolves paths from its own location, so all
-commands work from the repo root (or anywhere).
+`install.sh` copies:
+
+| What | To |
+|---|---|
+| rules (`CLAUDE.md`, `AGENTS.md`) | `~/.logic-spec/` |
+| Claude Code skills `fpga-*` and the `fpga-critic` agent | `~/.claude/skills/`, `~/.claude/agents/` |
+| Antigravity skills `fpga-*` | `~/.gemini/antigravity/skills/` (override with `AG_SKILLS_DIR=…`) |
+
+It fills the framework path into every copy and never deletes anything.
+**Re-run it whenever the framework changes** (e.g. after `git pull`).
 
 ---
 
-## Command cheat-sheet
+## 3. The workflow at a glance
 
 ```
-# once per tool version
-QUESTA_BIN=<questa>/bin vivado -mode batch -source tools/compile_simlib.tcl
-
-# IP and block design (per unit, if used)
-vivado -mode batch -source designs/<name>/tcl/build_ip.tcl
-vivado -mode batch -source designs/<name>/bd/build_bd.tcl
-
-# test plan lint (no EDA)
-python3 tools/make_report.py --check designs/<name>
-
-# tests, one by one + report
-bash tools/run_tests.sh <name>                         # all
-bash tools/run_tests.sh <name> questa T02 T05          # selected
-RANDOM_SEED=<n> bash tools/run_tests.sh <name> questa T01   # reproduce a seed
-MAKE_ARGS="WAVES=1" bash tools/run_tests.sh <name> questa T01
-
-# quick smoke while iterating (all tests, one run; never counts for validation)
-bash tools/run_sim.sh <name>            # or: bash tools/run_sim.sh <name> ghdl
-
-# SV/UVM path
-vsim -c -do designs/<name>/sim/run_sim.tcl
-
-# OOC synth check (fpga-auto writes build/synth_sources.tcl)
-bash tools/run_synth_check.sh <name>
-
-# top-level build
-vivado -mode batch -source designs/<top>/impl/build.tcl
-
-# after editing CLAUDE.md or .claude/
-bash tools/sync_agents.sh
+ you                          agent skill            output (in the design folder)
+ ───                          ───────────            ─────────────────────────────
+ write spec/spec.md     ──▶   fpga-spec        ──▶   spec/spec_work.md     ◀── GATE 0 (you approve)
+                              fpga-architect   ──▶   spec/architecture.md
+                              fpga-plan        ──▶   spec/plan.md          ◀── GATE 1 (you approve)
+                              fpga-testplan    ──▶   spec/testplan.md      ◀── GATE 2 (you approve)
+                              fpga-ip          ──▶   tcl/build_ip.tcl
+                              fpga-blockdesign ──▶   bd/build_bd.tcl       (optional)
+                              fpga-rtl         ──▶   rtl/*.vhd             status: generated
+                              fpga-testbench   ──▶   tb/*.py, tb/Makefile
+                              fpga-questa      ──▶   sim/RUN.md
+ run the tests          ──▶   (you)            ──▶   sim/test_report.md
+                              fpga-review      ──▶   fixes … status: validated  ◀── GATE 3
+ ── at the top level ──
+                              fpga-toplevel    ──▶   xdc/*.xdc, impl/build.tcl
+ run the build          ──▶   (you)            ──▶   bitstream
 ```
+
+How to invoke a skill: in Claude Code type `/fpga-spec` (or just ask, e.g.
+"review my spec"); in Antigravity ask for it by name. **Always open the design
+folder itself** as the workspace, so the pointer files load the rules.
 
 ---
 
-## Examples
+## 4. Walkthrough: from spec to validated unit
 
-- `designs/axis_fifo_loopback` — leaf: AXI-Stream CDC FIFO (`axis_fifo_ctrl`
-  + `xpm_fifo_async`), test plan T01–T04. Status `generated`; plan and test
-  plan awaiting approval.
-- `designs/ddc_channelizer` — composite skeleton (DDS, CMPY, CIC, FIR) reusing
-  `axis_fifo_loopback`; `planned`, blocked at gate 1 until its dependency is
-  validated.
+The running example is a reusable clock-domain-crossing AXI-Stream FIFO,
+`axis_fifo_loopback` (the finished files are in
+`examples/axis_fifo_loopback`). Commands run from the design folder; `$LS` is
+the framework folder.
 
-## Extending
+### Step 0 — Create the design folder and write the spec
 
-- **Add a role:** create `.claude/skills/<name>/SKILL.md` (front-matter `name`
-  + `description`), add it to the skills table in `CLAUDE.md`, then run
-  `bash tools/sync_agents.sh`.
-- **Add an isolated worker:** `.claude/agents/<name>.md` (mirror it into
+```bash
+mkdir -p D:/fpga/axis_fifo_loopback
+bash $LS/tools/new_design.sh D:/fpga/axis_fifo_loopback --template
+```
+
+This creates `spec/spec.md` (a checklist template), the pointer files and a
+`.gitignore`. Fill in `spec/spec.md` in your own words. Free-form is fine:
+
+```markdown
+## Purpose
+A clock-domain-crossing AXI-Stream loopback: words written on the s_axis clock
+are buffered and read out, in order, on the m_axis clock.
+
+## Interfaces
+- s_axis (slave) and m_axis (master), each with its own aclk / aresetn.
+- Data width 64 bits by default; must be adjustable when reused.
+
+## Functional requirements
+- Every word appears exactly once on m_axis, in order.
+- Full buffer → s_axis_tready low. Empty buffer → m_axis_tvalid low.
+...
+```
+
+> Shortcut: skip `new_design.sh`, open an empty folder, and describe the
+> design to the agent. `fpga-spec` creates the folder structure and saves
+> your words verbatim as `spec/spec.md`.
+
+`spec/spec.md` is **your** file. The framework never modifies it.
+
+### Step 1 — `fpga-spec`: review, questions, refined spec (gate 0)
+
+Open `D:/fpga/axis_fifo_loopback` in Claude Code or Antigravity and run
+`fpga-spec`. The agent checks the spec against a 12-point list (scope,
+interfaces, clocks, resets, behaviour, performance, resources, target,
+HDL/simulator, reuse, verification, measurability). Then it asks you
+**numbered questions**, each with a proposed default:
+
+```
+Q-1 (blocking)  Resets: are s_axis_aresetn / m_axis_aresetn synchronous to their
+                own clocks, active-low? Default: yes, sync, active-low.
+Q-2 (blocking)  Clock ranges: which frequencies must s_aclk and m_aclk support?
+                Default: 50–250 MHz each, any ratio, fully asynchronous.
+Q-3 (non-blocking)  DATA_WIDTH range when reused? Default: 8–512, multiple of 8.
+Q-4 (non-blocking)  Read-side behaviour: first-word fall-through? Default: yes.
+Q-5 (non-blocking)  HDL / simulator: VHDL-2008 + Questa/cocotb? Default: yes.
+```
+
+You answer, e.g. "Q-1 default, Q-2 100 and 150 MHz, others default." The
+agent then writes `spec/spec_work.md`:
+
+```markdown
+---
+status: pending
+source: spec/spec.md
+spec_sha256: 9f2c…          # fingerprint of spec.md at review time
+date: 2026-11-04
+---
+## Requirements
+| ID | Requirement (measurable) | Category | Type | Source |
+|---|---|---|---|---|
+| R-0 | Words written on s_axis are read out on m_axis across two independent clocks | purpose | stated | spec §Purpose |
+| R-1 | s_axis_aclk runs at 100 MHz, m_axis_aclk at 150 MHz, asynchronous | clock | stated | Q-2 |
+| RR-2 | Resets are synchronous to their own clock, active-low | reset | assumed | default (Q-1) |
+| R-3 | Every word written appears exactly once on m_axis, in order, bit-exact | function | stated | spec §Functional requirements |
+| RR-4 | The FIFO needs a gray-coded / XPM-style CDC between the two clocks | function | derived | from R-0, R-1 |
+| ... | | | | |
+## Clarifications log
+| Q | Question | Answer | Blocking | Resulting req |
+|---|---|---|---|---|
+| Q-1 | Reset type and polarity | default: sync, active-low | yes | RR-2 |
+| Q-2 | Clock frequencies | 100 MHz (s), 150 MHz (m), asynchronous | yes | R-1 |
+...
+## Open items (non-blocking)
+- (none)
+```
+
+Requirement IDs come from **one shared counter starting at 0**: `R-n` is
+something you stated (in `spec.md` or as an answer), `RR-n` is something the
+agent derived or a default you accepted. The agent lists every RR when it asks
+for approval, because those are the requirements you didn't write yourself.
+IDs never change; a dropped requirement is marked `withdrawn`.
+
+**You review `spec_work.md` and approve it** (say "approved"). The agent sets
+`status: approved`. From now on, **every step reads `spec_work.md`, not
+`spec.md`**.
+
+### Step 2 — `fpga-architect`: architecture and acceptance criteria
+
+The agent derives `spec/architecture.md`: the manifest plus the structured
+architecture. No code is written yet.
+
+```yaml
+---
+name: axis_fifo_loopback
+vendor: xilinx
+part: xc7a35ticsg324-1L
+kind: leaf
+top: axis_fifo_loopback
+status: planned
+dependencies: []
+ports:
+  - { name: s_axis_tdata, dir: in, width: DATA_WIDTH }
+  ...
+validated: {}
+---
+```
+
+It also writes numbered, measurable **acceptance criteria**, traced to the
+requirements:
+
+```markdown
+- **AC-1** GIVEN a stream of N words on s_axis WHEN they are read out on m_axis
+  THEN all N arrive exactly once, in order, bit-exact.   (R-3)
+- **AC-2** GIVEN the FIFO is full WHEN s_axis_tvalid is asserted THEN
+  s_axis_tready is deasserted.                           (R-5)
+```
+
+Vendor IP stays **abstract** here ("dual-clock FIFO 512 × DATA_WIDTH").
+
+### Step 3 — `fpga-plan`: the design plan (gate 1)
+
+The agent writes `spec/plan.md` (`status: pending`) with these sections:
+
+1. **Module hierarchy**: the top `rtl/axis_fifo_loopback.vhd`, with
+   `axis_fifo_ctrl` beneath it.
+2. **IP resolution**: the abstract FIFO resolved to `xpm_fifo_async`, so the
+   width can follow a VHDL generic.
+3. **Block design**: none in this example.
+4. **Verification strategy**: cocotb on Questa; the default configuration
+   uses the real top and the XPM model; `FAST=1` swaps in a behavioural FIFO
+   for quick iteration only.
+5. **Simulation setup**: compile order and the shared `simlibs`.
+
+**You review and approve.** No RTL, IP, BD, testbench or Tcl can be generated
+before this.
+
+### Step 4 — `fpga-testplan`: the test collection (gate 2)
+
+The agent breaks the unit into features and writes `spec/testplan.md`, one
+row per cocotb test:
+
+| ID | Function | AC | Priority | Pass criterion |
+|---|---|---|---|---|
+| T01 | t01_order_integrity | AC-1, AC-4 | must | 1024 random words, s 10 ns / m 7 ns, 20 % random stalls: received == sent (count, order, bit-exact) |
+| T02 | t02_backpressure_full | AC-2, AC-1 | must | consumer stalled: `s_axis_tready` low after N words, DEPTH-8 ≤ N ≤ DEPTH+4 … |
+| T03 | t03_empty_tvalid_low | AC-3 | must | after reset, `m_axis_tvalid` = 0 for 200 cycles … |
+| T04 | t04_cdc_fast_writer | AC-4, AC-1, AC-2 | must | s 4 ns / m 13 ns, 2048 words: received == sent … |
+
+Lint it (no EDA needed):
+
+```bash
+python3 $LS/tools/make_report.py --check .
+#   TESTPLAN OK: 4 tests (4 must), 0 error(s)
+```
+
+**You review and approve.** Pass criteria are now fixed. They are never
+loosened to make a test pass, and any later edit sends the test plan back to
+`pending`.
+
+### Step 5 — `fpga-ip` / `fpga-blockdesign`: vendor IP (if any)
+
+For configured cores, the agent writes `tcl/build_ip.tcl` and prints the
+command. You run it:
+
+```bash
+vivado -mode batch -source tcl/build_ip.tcl
+```
+
+(This example uses an XPM macro, which needs no generation step.
+`fpga-blockdesign` runs only when the plan wires IP in a Xilinx block design
+inside the unit.)
+
+### Step 6 — `fpga-rtl` + `fpga-testbench`: code
+
+- `fpga-rtl` writes VHDL-2008 into `rtl/`: `axis_fifo_ctrl.vhd`, plus
+  `axis_fifo_loopback.vhd` as the unit top. It sets the status to
+  `generated`.
+- `fpga-testbench` writes `tb/test_axis_fifo_loopback.py` with exactly one
+  `@cocotb.test` per test-plan row, using the same function names and the pass
+  criteria as assertions. It also writes `tb/Makefile`.
+
+### Step 7 — `fpga-questa` + you: run the tests
+
+`fpga-questa` writes `sim/RUN.md` and prints the commands. You run the
+standard runner. Each test runs in its own simulator invocation, in plan
+order:
+
+```bash
+bash $LS/tools/run_tests.sh .
+#  T01  t01_order_integrity        must  ... done
+#  T02  t02_backpressure_full      must  ... FAIL
+#  T03  t03_empty_tvalid_low       must  ... done
+#  T04  t04_cdc_fast_writer        must  ... done
+#  REPORT FAIL: must 3/4, should 0/0 -> sim/test_report.md
+```
+
+The result is `sim/test_report.md`: per-test PASS/FAIL/ERROR/STALE, seed,
+log link (`sim/tests/<ID>.log`), acceptance-criteria coverage and the gate-3
+verdict.
+
+### Step 8 — `fpga-review`: repair and validate (gate 3)
+
+Tell the agent "review the test report". `fpga-review` takes the failing tests
+in plan order. It diagnoses each one against its pass criterion and hands deep
+log analysis to `fpga-critic`. Then it applies a **minimal** fix and prints
+the re-run command:
+
+```bash
+bash $LS/tools/run_tests.sh . questa T02                  # re-run one test
+RANDOM_SEED=1234 bash $LS/tools/run_tests.sh . questa T02 # reproduce a seed
+```
+
+Repeat until a **full, default-configuration** run reports
+`PASS — meets the validation gate`. The agent then stamps the manifest:
+
+```yaml
+status: validated
+validated: { date: 2026-11-05, tests: "4/4 must PASS", report: sim/test_report.md }
+```
+
+The unit can now be reused.
+
+---
+
+## 5. Building a hierarchy and the FPGA top
+
+### A composite unit
+
+Create a sibling design folder, e.g. `D:/fpga/ddc_channelizer`, and run
+steps 0–8 for it. In step 2 the architect finds the reusable unit, and you can
+also name it in your spec. It records the reuse as a relative path:
+
+```yaml
+kind: composite
+dependencies:
+  - ../axis_fifo_loopback
+```
+
+- Gate 1 refuses to approve the plan until `../axis_fifo_loopback` is
+  `validated`.
+- `fpga-rtl` instantiates its top entity
+  (`entity work.axis_fifo_loopback generic map (DATA_WIDTH => …)`).
+- The testbench and build scripts compile the dependency's
+  `../axis_fifo_loopback/rtl/*.vhd` first (bottom-up).
+- The composite's tests are **integration tests** over the whole subtree.
+
+Typical folder arrangement:
+
+```
+D:/fpga/
+  axis_fifo_loopback/   leaf        validated
+  ddc_channelizer/      composite   dependencies: [../axis_fifo_loopback]
+  radio_top/            top         dependencies: [../ddc_channelizer, …]
+```
+
+### The FPGA top
+
+Give the highest unit `kind: top` and a **pin map** (port → package pin → IO
+standard, plus clocks). Put the pins in its `spec.md` so `fpga-spec` checks
+them. Once every dependency (transitively) is `validated`:
+
+```bash
+# fpga-toplevel writes xdc/<top>_pins.xdc and impl/build.tcl
+#   (+ impl/run_sources.tcl: all RTL bottom-up, + impl/run_constraints.tcl)
+bash $LS/tools/run_tests.sh .                     # top integration tests
+vivado -mode batch -source impl/build.tcl         # synth → place → route → bitstream
+```
+
+Existing constraint and build files are patched, never overwritten.
+
+---
+
+## 6. Automatic mode (opt-in)
+
+Invoke `fpga-auto` explicitly to let the agent run the verify loop itself:
+
+```
+run_tests.sh → read report → minimal fix → re-run … (max 5 iterations)
+     → on PASS: OOC synth check (run_synth_check.sh)
+     → summary → ASKS YOU to confirm → validated
+```
+
+Guardrails:
+
+- functional simulation and an OOC synthesis check only (never
+  implementation, bitstream or hardware);
+- gates 0–2 still apply;
+- every action is logged in `sim/auto_log.md`;
+- it stops and hands back on an ambiguous or repeated failure, a port or
+  test-plan change, or a timing/resource issue.
+
+---
+
+## 7. When something changes
+
+| You change… | Effect | What to do |
+|---|---|---|
+| `spec/spec.md` | gate 0 breaks (fingerprint mismatch); the tools refuse to run tests | run `fpga-spec` again, then approve the updated `spec_work.md` |
+| an approved `spec_work.md` | back to `pending` | approve it; `fpga-architect` re-derives the architecture and the plan goes back to `pending` |
+| an approved `plan.md` | back to `pending` | review and approve again |
+| an approved `testplan.md` | back to `pending`; existing results become STALE | approve, then re-run the tests |
+| RTL / tb / IP Tcl of a `validated` unit | status back to `generated`; every unit that depends on it must be re-validated | re-run the tests, review |
+
+Every generating skill records its stage in `spec/design_log.md` (newest
+first), so you can always see where a design stands.
+
+---
+
+## 8. Reference
+
+### Files of a design
+
+| File | Role | Written by |
+|---|---|---|
+| `spec/spec.md` | your requirements; never modified | you |
+| `spec/spec_work.md` | refined spec: requirements table (`R-n` stated / `RR-n` derived or assumed, one shared counter from 0), clarifications log, open items, spec fingerprint (gate 0) | `fpga-spec` |
+| `spec/architecture.md` | manifest + architecture + `AC-n` (+ pin map); the only place `status` lives | `fpga-architect` (status: rtl/review/auto) |
+| `spec/plan.md` | design plan (gate 1) | `fpga-plan` |
+| `spec/testplan.md` | tests `T01…` with pass criteria (gate 2) | `fpga-testplan` |
+| `spec/design_log.md` | stage log, newest first | every generating skill |
+| `rtl/` | VHDL-2008; `rtl/<top>.vhd` is the unit top | `fpga-rtl` |
+| `tb/` | cocotb tests + `Makefile` | `fpga-testbench` |
+| `tcl/` | `build_ip.tcl`; generated IP in `tcl/ip/` | `fpga-ip` |
+| `bd/` | `build_bd.tcl` (optional) | `fpga-blockdesign` |
+| `sim/` | `RUN.md`, `run_sim.tcl` (UVM), `tests/<ID>.log/.xml`, `test_report.md/.json`, `auto_log.md` | `fpga-questa`, tools, `fpga-auto` |
+| `build/` | OOC synth-check workspace | `fpga-auto` |
+| `xdc/`, `impl/` | constraints + non-project build (top only) | `fpga-toplevel` |
+
+### Skills
+
+| Skill | Role | Produces |
+|---|---|---|
+| `fpga-spec` | review spec, ask, refine — gate 0 | `spec/spec_work.md` (+ folder scaffold) |
+| `fpga-architect` | architecture, vendor, manifest, hierarchy | `spec/architecture.md` |
+| `fpga-plan` | design plan — gate 1 | `spec/plan.md` |
+| `fpga-testplan` | test collection — gate 2 | `spec/testplan.md` |
+| `fpga-ip` | vendor IP configuration | `tcl/build_ip.tcl` |
+| `fpga-blockdesign` | Xilinx BD inside a unit | `bd/build_bd.tcl` |
+| `fpga-rtl` | VHDL + sub-unit instantiation | `rtl/*.vhd` |
+| `fpga-testbench` | cocotb tests from the test plan | `tb/*.py`, `tb/Makefile` |
+| `fpga-questa` | sim scripts + run instructions | `sim/RUN.md` (+ `run_sim.tcl`) |
+| `fpga-review` | repair failing tests — gate 3 | fixes, `status: validated` |
+| `fpga-toplevel` | pins → constraints + build | `xdc/*`, `impl/*` |
+| `fpga-auto` | opt-in automatic verify loop | `sim/test_report.md`, `sim/auto_log.md` |
+| `fpga-critic` | read-only failure diagnosis | diagnosis only |
+
+### Two test runners
+
+| | `run_tests.sh` — **standard** | `run_sim.sh` — **quick smoke** |
+|---|---|---|
+| Runs | one simulator invocation **per test**, in plan order | **one** invocation for all tests |
+| Gates checked | gate 0 + approved test plan, plan lint | none |
+| Output | `sim/test_report.md/.json`: per test, seed, log, AC coverage, STALE, verdict | one line + `sim/last_sim.log` |
+| Counts for validation | **yes** (full run, default configuration) | **never** |
+
+Use `run_sim.sh` only for fast feedback while fixing, or to try another
+cocotb simulator (`bash $LS/tools/run_sim.sh . ghdl`).
+
+### Command cheat-sheet
+
+```bash
+# ---- once ----
+bash $LS/tools/install.sh                                   # install / refresh
+QUESTA_BIN=<questa>/bin vivado -mode batch -source $LS/tools/compile_simlib.tcl
+
+# ---- new design ----
+bash $LS/tools/new_design.sh <folder> --template
+
+# ---- from the design folder ----
+python3 $LS/tools/make_report.py --check .                  # lint test plan, gate 0, R/RR IDs
+vivado -mode batch -source tcl/build_ip.tcl                 # IP (if any)
+vivado -mode batch -source bd/build_bd.tcl                  # block design (if any)
+bash $LS/tools/run_tests.sh .                               # all tests + report
+bash $LS/tools/run_tests.sh . questa T02 T05                # selected tests
+RANDOM_SEED=<n> bash $LS/tools/run_tests.sh . questa T01    # reproduce a seed
+MAKE_ARGS="WAVES=1" bash $LS/tools/run_tests.sh . questa T01   # with waveforms
+bash $LS/tools/run_sim.sh .                                 # quick smoke (not for validation)
+vsim -c -do sim/run_sim.tcl                                 # SV/UVM path
+bash $LS/tools/run_synth_check.sh .                         # OOC synth check
+vivado -mode batch -source impl/build.tcl                   # top-level build
+```
+
+### Hard rules (summary)
+
+The full rules are in `CLAUDE.md` / `AGENTS.md`:
+
+- `spec.md` is read-only.
+- Nothing runs before gate 0, no code before gate 1, no testbench before
+  gate 2, no reuse before gate 3.
+- The agent never runs EDA tools and never claims a run happened, except in
+  `fpga-auto`.
+- VHDL-2008 is the primary HDL, unless `spec_work.md` says otherwise.
+- One vendor per unit.
+- Generated Tcl resolves paths from its own location.
+- Files are never deleted without your approval.
+
+---
+
+## 9. Maintaining the framework
+
+| Path | Contents |
+|---|---|
+| `CLAUDE.md` | rules — **source of truth** |
+| `AGENTS.md` | rules for Antigravity (generated) |
+| `.claude/skills/fpga-*/SKILL.md` | skills — **source of truth** |
+| `.claude/agents/fpga-critic.md` | read-only critic subagent |
+| `.agents/skills/` | Antigravity copy (generated) |
+| `tools/` | `install.sh`, `new_design.sh`, `run_tests.sh`, `run_sim.sh`, `run_synth_check.sh`, `make_report.py`, `compile_simlib.tcl`, `sync_agents.sh` |
+| `templates/` | starting points the skills fill in (incl. `spec_work.md`, `design/` pointer files) |
+| `docs/` | `framework-design-spec.md` (rationale), `LOOP.md` (verify loop) |
+| `examples/` | example design folders in the standard layout |
+| `simlibs/` | shared vendor simulation libraries (not in git) |
+
+- **Edit** `CLAUDE.md` and `.claude/` only, then run
+  `bash tools/install.sh`. It runs `tools/sync_agents.sh` first to regenerate
+  the Antigravity copy, then reinstalls.
+- In skills, refer to framework files as `{{LOGIC_SPEC}}/…`; the installer
+  replaces this with the real path.
+- **Add a role:** create `.claude/skills/fpga-<name>/SKILL.md` (front-matter
+  `name` + `description`), add it to the skills table in `CLAUDE.md`, re-run
+  `install.sh`. A removed skill must be deleted from the install folders by
+  hand.
+- **Add an isolated worker:** `.claude/agents/fpga-<name>.md` (mirror it in
   `tools/sync_agents.sh` if Antigravity needs it).
-- **Share across projects:** package the skills/agents as a Claude Code plugin.
+
+Rationale and design decisions: `docs/framework-design-spec.md`. The
+generate → simulate → repair loop in detail: `docs/LOOP.md`.

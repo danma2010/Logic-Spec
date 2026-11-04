@@ -1,0 +1,19 @@
+# Logic-Spec design project: generated / tool output
+# keep sim/RUN.md, sim/run_sim.tcl and sim/test_report.md|json under version control
+sim/tests/
+sim/last_sim.log
+sim/work/
+tb/sim_build/
+tb/modelsim.ini
+tb/__pycache__/
+tcl/ip/
+bd/*_bd/
+build/
+impl/out/
+*.wlf
+*.vcd
+*.jou
+*.str
+transcript
+results.xml
+.Xil/

@@ -7,13 +7,13 @@ description: Write the cocotb testbench from the approved test plan — exactly 
 
 ## Gate check (do this first)
 
-Require `designs/<name>/plan.md` **and** `designs/<name>/testplan.md`, both
+Require `spec/plan.md` **and** `spec/testplan.md`, both
 `status: approved`. Otherwise stop and name the missing gate.
 
 ## Steps
 
-1. For every row of `testplan.md` write one `@cocotb.test()` named exactly as
-   its `Function` column, in `designs/<name>/tb/test_<name>.py`. Put the test
+1. For every row of `spec/testplan.md` write one `@cocotb.test()` named exactly as
+   its `Function` column, in `tb/test_<name>.py`. Put the test
    ID and pass criterion in the docstring; code the criterion as assertions with
    messages that state expected vs. actual. No extra tests outside the plan
    (add them to the plan first).
@@ -25,19 +25,21 @@ Require `designs/<name>/plan.md` **and** `designs/<name>/testplan.md`, both
 3. Use `random` seeded by cocotb (no private seeds) so `RANDOM_SEED`
    reproduces a run.
 4. **Hierarchy:** for a `composite`/`top`, this is an integration test: compile
-   every sub-unit's `rtl/*.vhd` first (bottom-up, from `dependencies`).
-5. Emit `designs/<name>/tb/Makefile` from `templates/questa/Makefile`: the
+   every sub-unit's `<dep>/rtl/*.vhd` first (bottom-up, from `dependencies`;
+   `<dep>` is the dependency's design folder, relative to `<design>`).
+5. Emit `tb/Makefile` from `{{LOGIC_SPEC}}/templates/questa/Makefile`
+   (set `LOGIC_SPEC ?= {{LOGIC_SPEC}}` for the shared sim libraries): the
    **default** configuration must use the unit's real `top` and real IP models
    (this is what gate 3 accepts). A behavioural fast loop is allowed only as an
    opt-in make variable (e.g. `FAST=1`).
-6. Lint: `python3 tools/make_report.py --check designs/<name>` → `TESTPLAN OK`
+6. Lint: `python3 {{LOGIC_SPEC}}/tools/make_report.py --check .` → `TESTPLAN OK`
    (now also checks every planned test exists in `tb/`).
 7. SV/UVM only if the plan flags it (emit `sim/run_sim.tcl` via `fpga-questa`).
 
 ## Manual run (print; do not run)
 
 ```
-bash tools/run_tests.sh <name>             # test by test → sim/test_report.md
+bash {{LOGIC_SPEC}}/tools/run_tests.sh .             # test by test → sim/test_report.md
 ```
 
 ## Next
@@ -46,8 +48,8 @@ bash tools/run_tests.sh <name>             # test by test → sim/test_report.md
 
 ## Design log
 
-Prepend an entry to `designs/<name>/design_log.md` (format:
-`templates/design_log.md`): same cycle number while the unit is in the same
+Prepend an entry to `spec/design_log.md` (format:
+`{{LOGIC_SPEC}}/templates/design_log.md`): same cycle number while the unit is in the same
 design round, +1 when a new round starts (e.g. after a validated unit is
 changed). Record the stage completed, unit status, plan / test-plan status and
 test results.

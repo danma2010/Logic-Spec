@@ -1,6 +1,6 @@
 # FPGA Design Framework — Design Specification
 
-**Status:** v0.2 — aligned with the implemented framework (2026-10-12)
+**Status:** v0.3 — external design folders + spec-review gate 0 (2026-11-04)
 **Author:** Dan Mayaffit
 **Purpose:** A spec-driven, gated, hierarchical framework in which a coding
 agent generates FPGA designs — vendor IP configuration, custom RTL, test plans
@@ -16,7 +16,8 @@ Vivado, under mandatory human approval gates.
 ## 1. Scope
 
 ### Goals
-- Turn a written requirement (`spec.md`) into a **validated FPGA unit**:
+- Turn a written requirement (`spec.md`), refined with the user into an
+  approved `spec_work.md`, into a **validated FPGA unit**:
   configured vendor IP + custom RTL, with a planned test collection that
   passes in simulation.
 - Build systems **bottom-up**: validated units are reused by higher units,
@@ -44,21 +45,37 @@ Vivado, under mandatory human approval gates.
 
 `CLAUDE.md` and `.claude/` are the single source of truth;
 `tools/sync_agents.sh` regenerates the Antigravity copy so the platforms
-cannot drift. Deterministic work (running tests, parsing results, building
+cannot drift, and `tools/install.sh` installs both user-wide (skills into the
+agents' global skill folders, rules into `~/.logic-spec/`, framework path
+filled in for `{{LOGIC_SPEC}}`).
+
+**Framework and designs are separate.** The framework is installed once; a
+design is any folder that holds one unit and loads the rules through two
+pointer files (`CLAUDE.md` importing `~/.logic-spec/CLAUDE.md`, `AGENTS.md`
+referring to `~/.logic-spec/AGENTS.md`). Design folders reference each other
+by relative path; nothing of a design is written into the framework except the
+shared vendor simulation libraries. Deterministic work (running tests, parsing results, building
 reports, synth checks) lives in plain scripts under `tools/`, not in prompts.
 
 ---
 
 ## 3. Data model
 
-Each unit is a directory `designs/<name>/`:
+Each unit is a design folder `<design>/` (anywhere). Its documents live in
+`<design>/spec/`; code (`rtl/`, `tb/`, `tcl/`, `bd/`, `sim/`, `xdc/`, `impl/`)
+sits beside `spec/`.
 
-- `spec.md` — the user's **input**; never modified by the framework.
-- `architecture.md` — the **manifest** (front-matter: `name, vendor, part,
+- `spec/spec.md` — the user's **input**; never modified by the framework.
+- `spec/spec_work.md` — the **refined spec** (gate 0): all requirements in
+  one table, numbered from one shared counter starting at 0 — `R-n` stated by
+  the user, `RR-n` derived or assumed by the agent — each with its source;
+  the clarifications log and open items; and the hash of the `spec.md` it was
+  derived from. The input of every later step.
+- `spec/architecture.md` — the **manifest** (front-matter: `name, vendor, part,
   kind, top, status, dependencies, ports, validated`) plus the derived
   architecture and numbered acceptance criteria `AC-n`. The only place a
   unit's status lives.
-- `plan.md` (gate 1), `testplan.md` (gate 2), `design_log.md`,
+- `spec/plan.md` (gate 1), `spec/testplan.md` (gate 2), `spec/design_log.md`,
   `sim/test_report.md` (evidence for gate 3).
 
 **Status lifecycle:** `planned` → `generated` (RTL written) → `validated`
@@ -96,7 +113,8 @@ available to parents and keeps the compile order explicit.
 ## 6. Pipeline and gates
 
 ```
-1. Input            spec.md (user)
+1. Input            spec/spec.md (user)
+1a. Spec review     spec_work.md: questions → R-n / RR-n requirements ⟵ GATE 0 (approval; hash of spec.md)
 2. Architecture     architecture.md: vendor, part, kind, top, deps, AC-n
 3. Plan             plan.md                         ⟵ GATE 1 (approval; deps validated)
 4. Test plan        testplan.md: T01…, pass criteria ⟵ GATE 2 (approval)
@@ -107,7 +125,9 @@ available to parents and keeps the compile order explicit.
 9. Top level        constraints + non-project build (+ top integration tests)
 ```
 
-Gate 1 stops code before a reviewed plan. Gate 2 fixes *what "correct" means*
+Gate 0 makes missing or ambiguous requirements a question to the user instead
+of an agent's guess, and records every accepted default. Gate 1 stops code
+before a reviewed plan. Gate 2 fixes *what "correct" means*
 — measurable pass criteria traced to every `AC-n` — before any testbench code,
 so a criterion is never loosened to get a pass. Gate 3 makes reuse safe.
 
@@ -117,7 +137,8 @@ so a criterion is never loosened to get a pass. Gate 3 makes reuse safe.
 
 | Role (skill) | Consumes | Produces |
 |---|---|---|
-| `fpga-architect` | `spec.md`, existing units | `architecture.md` |
+| `fpga-spec` | `spec.md`, user answers | `spec_work.md` (gate 0), design scaffold |
+| `fpga-architect` | `spec_work.md`, existing design folders | `architecture.md` |
 | `fpga-plan` | architecture | `plan.md` (gate 1) |
 | `fpga-testplan` | AC-n, plan | `testplan.md` (gate 2) |
 | `fpga-ip` | plan | `tcl/build_ip.tcl` |
@@ -139,7 +160,7 @@ and the tests are written from the test plan, before or with the RTL.
 
 ### 8.1 Simulation (Questa)
 - `tools/compile_simlib.tcl` compiles vendor libraries once per tool version
-  into `simlibs/questa/` (shared by all units).
+  into `<LOGIC_SPEC>/simlibs/questa/` (shared by all designs).
 - `tb/Makefile` (cocotb) compiles sub-units bottom-up, then the unit; the
   default configuration uses the real top and real IP models.
 - `tools/run_tests.sh` runs each test-plan entry in its own simulator
@@ -207,7 +228,7 @@ audit log, stop-and-hand-back on ambiguity, and user confirmation before
 ## 12. Roadmap
 
 - **v1 (now)** — VHDL + Xilinx IP/XPM/BD, cocotb test plans and per-test
-  reports, three gates, hierarchy and top-level build, Claude Code +
+  reports, four gates (spec review first), external design folders, hierarchy and top-level build, Claude Code +
   Antigravity, opt-in auto mode.
 - **v2** — Altera path end-to-end; abstract-IP resolution catalogue for both
   vendors.

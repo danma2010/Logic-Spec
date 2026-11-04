@@ -1,10 +1,10 @@
 # build_bd.tcl — Xilinx block design (IP Integrator) INSIDE a unit.
-# Emitted to designs/<unit>/bd/build_bd.tcl by fpga-blockdesign.
+# Emitted to <design>/bd/build_bd.tcl by fpga-blockdesign.
 # The BD wrapper is instantiated by the unit's RTL top (rtl/<top>.vhd); it is
 # never the unit's top itself (CLAUDE.md, reuse = direct RTL instantiation).
 #
 # RUN MANUALLY (from any directory, after build_ip.tcl if the BD uses its IP):
-#   vivado -mode batch -source designs/<unit>/bd/build_bd.tcl
+#   vivado -mode batch -source <design>/bd/build_bd.tcl
 
 set SCRIPT_DIR [file normalize [file dirname [info script]]]
 set UNIT_DIR   [file normalize $SCRIPT_DIR/..]

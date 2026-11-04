@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """make_report.py — test-plan lint, test list and per-test report builder.
 
-  python3 tools/make_report.py --check  designs/<unit> [--require-approved]
-  python3 tools/make_report.py --list   designs/<unit>
-  python3 tools/make_report.py --report designs/<unit> [--sim questa] [--make-args "..."]
+  python3 <LOGIC_SPEC>/tools/make_report.py --check  <design> [--require-approved]
+  python3 <LOGIC_SPEC>/tools/make_report.py --list   <design>
+  python3 <LOGIC_SPEC>/tools/make_report.py --report <design> [--sim questa] [--make-args "..."]
 
---check   Lint testplan.md against architecture.md (and tb/*.py if present).
-          Exit 0 OK, 1 issues found.
+<design> is a design folder (e.g. `.`): documents in <design>/spec/, code in
+<design>/rtl, tb, ... and results in <design>/sim/.
+
+--check   Lint spec/testplan.md against spec/architecture.md (and tb/*.py if
+          present); also checks gate 0 (spec/spec_work.md approved and its
+          spec_sha256 matching spec/spec.md) and lints the spec_work
+          requirement IDs (R-n / RR-n, one shared counter from 0, no number
+          used twice, Type matching the prefix). Exit 0 OK, 1 issues found.
 --list    Print "ID function priority" per test (for tools/run_tests.sh).
 --report  Build sim/test_report.md + sim/test_report.json from
           sim/tests/<ID>.xml|.log. Exit 0 when the unit meets the validation
@@ -19,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import re
 import sys
@@ -119,8 +126,59 @@ def cocotb_tests(tb_dir: Path) -> set[str]:
 # ------------------------------------------------------------------ check ---
 
 
+def spec_gate(unit: Path) -> str:
+    """Gate 0: '' if spec/spec_work.md is approved and matches spec/spec.md, else the reason."""
+    sw, sp = unit / "spec" / "spec_work.md", unit / "spec" / "spec.md"
+    if not sw.exists():
+        return "gate 0: spec/spec_work.md not found (run fpga-spec)"
+    fm, _ = front_matter(sw.read_text(encoding="utf-8"))
+    if str(fm.get("status", "")).lower() != "approved":
+        return "gate 0: spec/spec_work.md is not approved"
+    if sp.exists() and str(fm.get("spec_sha256", "")).lower() != hashlib.sha256(sp.read_bytes()).hexdigest():
+        return "gate 0: spec/spec.md changed since spec_work.md was approved (re-run fpga-spec)"
+    return ""
+
+
+def lint_requirements(unit: Path) -> tuple[list[str], list[str]]:
+    """spec_work.md '## Requirements' table: R-n stated / RR-n derived|assumed,
+    one shared counter from 0. Returns (errors, warnings)."""
+    sw = unit / "spec" / "spec_work.md"
+    if not sw.exists():
+        return [], []
+    _, body = front_matter(sw.read_text(encoding="utf-8"))
+    m = re.search(r"^##\s+Requirements\s*$(.*?)(?=^##\s|\Z)", body, re.M | re.S)
+    if not m:
+        return ["spec_work.md: no '## Requirements' section"], []
+    errs, warns, seen = [], [], {}
+    for line in m.group(1).splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if not line.lstrip().startswith("|") or len(cells) < 5 or not re.match(r"R", cells[0]):
+            continue
+        rid, typ = cells[0], cells[3].lower()
+        mm = re.fullmatch(r"(RR|R)-(\d+)", rid)
+        if not mm:
+            errs.append(f"spec_work.md: requirement ID '{rid}' must look like R-0 or RR-0")
+            continue
+        pre, num = mm.group(1), int(mm.group(2))
+        if num in seen:
+            errs.append(f"spec_work.md: number {num} used twice ({seen[num]}, {rid}) — R and RR share one counter")
+        seen[num] = rid
+        if pre == "R" and typ not in ("stated",):
+            warns.append(f"spec_work.md: {rid} is R (user-stated) but Type is '{typ}'")
+        if pre == "RR" and typ not in ("derived", "assumed"):
+            warns.append(f"spec_work.md: {rid} is RR but Type is '{typ}' (derived|assumed)")
+    if not seen:
+        errs.append("spec_work.md: the Requirements table has no R-n / RR-n rows")
+    else:
+        gaps = sorted(set(range(max(seen) + 1)) - set(seen))
+        if gaps:
+            warns.append(f"spec_work.md: requirement numbers missing {gaps} (numbering starts at 0 and is continuous; "
+                         "mark dropped requirements 'withdrawn' instead of deleting them)")
+    return errs, warns
+
+
 def load(unit: Path):
-    arch_p, tp_p = unit / "architecture.md", unit / "testplan.md"
+    arch_p, tp_p = unit / "spec" / "architecture.md", unit / "spec" / "testplan.md"
     if not arch_p.exists():
         sys.exit(f"TESTPLAN FAIL: {arch_p} not found")
     if not tp_p.exists():
@@ -135,6 +193,12 @@ def check(unit: Path, require_approved: bool) -> tuple[list[str], list[str], lis
     arch_fm, acs, tp_fm, tp_body = load(unit)
     tests = parse_tests(tp_body)
     errs, warns = [], []
+    g0 = spec_gate(unit)
+    if g0:
+        (errs if require_approved else warns).append(g0)
+    r_errs, r_warns = lint_requirements(unit)
+    (errs if require_approved else warns).extend(r_errs)
+    warns.extend(r_warns)
     status = str(tp_fm.get("status", "")).lower()
     if status not in ("pending", "approved"):
         errs.append(f"testplan status must be pending|approved, got '{status}'")
@@ -191,16 +255,23 @@ def check(unit: Path, require_approved: bool) -> tuple[list[str], list[str], lis
 _IGNORE = {"sim_build", "__pycache__", "results.xml", "modelsim.ini", "transcript"}
 
 
+def _generated_ip(f: Path) -> bool:
+    """True for files under a tcl/ip/ tree (generated IP output, not a source)."""
+    p = f.parts
+    return any(p[i] == "tcl" and p[i + 1] == "ip" for i in range(len(p) - 1))
+
+
 def newest_source(unit: Path, deps: list[str]) -> float:
-    roots = [unit / "rtl", unit / "tb", unit / "tcl", unit / "bd", unit / "testplan.md"]
-    for d in deps:
-        roots += [unit.parent / d / "rtl", unit.parent / d / "tcl"]
+    roots = [unit / "rtl", unit / "tb", unit / "tcl", unit / "bd", unit / "spec" / "testplan.md"]
+    for d in deps:  # dependencies are design folders, relative to this design
+        dep = (unit / d).resolve()
+        roots += [dep / "rtl", dep / "tcl"]
     newest = 0.0
     for r in roots:
         files = [r] if r.is_file() else (r.rglob("*") if r.is_dir() else [])
         for f in files:
             if f.is_file() and not (set(f.parts) & _IGNORE) and f.suffix not in (".wlf", ".vcd", ".pyc") \
-                    and "ip" not in f.relative_to(unit.parent).parts[2:3]:
+                    and not _generated_ip(f):
                 newest = max(newest, f.stat().st_mtime)
     return newest
 
@@ -261,8 +332,11 @@ def report(unit: Path, sim: str, make_args: str) -> int:
     should_ok = sum(r["result"] == "PASS" for r in should)
     unwaived = [r["id"] for r in should if r["result"] != "PASS" and not r["waiver"]]
     approved = str(tp_fm.get("status", "")).lower() == "approved"
-    gate = approved and not errs and must and must_ok == len(must) and not unwaived
+    g0 = spec_gate(unit)
+    gate = approved and not g0 and not errs and must and must_ok == len(must) and not unwaived
     reasons = []
+    if g0:
+        reasons.append(g0)
     if not approved:
         reasons.append("test plan not approved")
     if errs:
@@ -300,7 +374,7 @@ def report(unit: Path, sim: str, make_args: str) -> int:
     if errs or warns:
         md += ["", "## Test-plan lint", ""] + [f"- ERROR: {e}" for e in errs] + [f"- warning: {w}" for w in warns]
     md += ["", "Reproduce a test: `RANDOM_SEED=<seed> COCOTB_RANDOM_SEED=<seed> "
-               f"bash tools/run_tests.sh {name} {sim} <ID>`", ""]
+               f"bash {Path(__file__).resolve().parent.as_posix()}/run_tests.sh . {sim} <ID>` (from the design folder)", ""]
 
     out = unit / "sim"
     out.mkdir(parents=True, exist_ok=True)
@@ -324,7 +398,7 @@ def main() -> int:
     g.add_argument("--check", action="store_true")
     g.add_argument("--list", action="store_true")
     g.add_argument("--report", action="store_true")
-    ap.add_argument("unit_dir", type=Path)
+    ap.add_argument("unit_dir", type=Path, help="design folder (e.g. .)")
     ap.add_argument("--require-approved", action="store_true")
     ap.add_argument("--sim", default="questa")
     ap.add_argument("--make-args", default="")

@@ -8,7 +8,7 @@ transfer decision uses the values read right after the *next* rising edge,
 i.e. the values present at that edge (cocotb resumes before the edge's
 registered updates are visible).
 
-Run:  bash tools/run_tests.sh axis_fifo_loopback   (see sim/RUN.md)
+Run:  bash <LOGIC_SPEC>/tools/run_tests.sh .   from the design folder (see sim/RUN.md)
 """
 
 import random

@@ -1,9 +1,9 @@
 #==============================================================================
 # Vivado non-project build — modular. Generated/edited by fpga-toplevel.
-# Emitted to designs/<top>/impl/build.tcl.   Part : <PART>   Top : <TOP>
+# Emitted to <design>/impl/build.tcl.   Part : <PART>   Top : <TOP>
 # Keep this file stable; put file lists in run_sources.tcl / run_constraints.tcl.
 # RUN MANUALLY (from any directory):
-#   vivado -mode batch -source designs/<top>/impl/build.tcl
+#   vivado -mode batch -source <design>/impl/build.tcl
 #==============================================================================
 
 set SCRIPT_DIR [file normalize [file dirname [info script]]]

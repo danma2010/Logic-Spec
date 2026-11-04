@@ -7,16 +7,16 @@ description: Break a unit into features and write testplan.md — a collection o
 
 ## Gate check (do this first)
 
-Require `designs/<name>/plan.md` with `status: approved`. Otherwise stop.
+Require `spec/plan.md` with `status: approved`. Otherwise stop.
 
 ## Steps
 
-1. Read the acceptance criteria `AC-n` in `architecture.md` and the
-   verification strategy in `plan.md`.
+1. Read the acceptance criteria `AC-n` in `spec/architecture.md` and the
+   verification strategy in `spec/plan.md`.
 2. List the unit's **features** (`F1`, `F2`, …) — behaviours worth testing in
    isolation (data path, backpressure, reset, CDC, error handling, …).
-3. Write the **tests** table in `designs/<name>/testplan.md` from
-   `templates/testplan.md`:
+3. Write the **tests** table in `spec/testplan.md` from
+   `{{LOGIC_SPEC}}/templates/testplan.md`:
    - `ID` `T01`, `T02`, … (stable — never renumber an existing test);
    - `Function` — the cocotb test name, `t<NN>_<short_name>`;
    - `Features`, `AC` covered;
@@ -27,7 +27,7 @@ Require `designs/<name>/plan.md` with `status: approved`. Otherwise stop.
    behaviour per test so a failure points at one feature.
 4. For a composite/top: tests exercise the unit's own interface (integration);
    sub-units keep their standalone validation.
-5. Lint: `python3 tools/make_report.py --check designs/<name>` must print
+5. Lint: `python3 {{LOGIC_SPEC}}/tools/make_report.py --check .` must print
    `TESTPLAN OK` (before tb exists, only the plan is checked).
 
 ## The gate
@@ -43,8 +43,8 @@ criterion to make a failing test pass.
 
 ## Design log
 
-Prepend an entry to `designs/<name>/design_log.md` (format:
-`templates/design_log.md`): same cycle number while the unit is in the same
+Prepend an entry to `spec/design_log.md` (format:
+`{{LOGIC_SPEC}}/templates/design_log.md`): same cycle number while the unit is in the same
 design round, +1 when a new round starts (e.g. after a validated unit is
 changed). Record the stage completed, unit status, plan / test-plan status and
 test results.

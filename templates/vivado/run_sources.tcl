@@ -5,12 +5,12 @@
 # Read BOTTOM-UP: leaf sub-units first, then composites, then this unit.
 #==============================================================================
 set _here [file normalize [file dirname [info script]]]
-set _unit [file normalize $_here/..]           ;# designs/<unit>
-set _designs [file normalize $_unit/..]        ;# designs/
+set _unit [file normalize $_here/..]           ;# the design folder (<design>)
 
 # --- sub-unit RTL + IP (validated units, direct RTL instantiation) -----------
-# read_vhdl -vhdl2008 [glob $_designs/<leaf_unit>/rtl/*.vhd]
-# read_ip   $_designs/<leaf_unit>/tcl/ip/<ip>/<ip>.xci
+# <dep> = a `dependencies` path from spec/architecture.md, relative to the design folder
+# read_vhdl -vhdl2008 [glob [file normalize $_unit/<dep>]/rtl/*.vhd]
+# read_ip   [file normalize $_unit/<dep>]/tcl/ip/<ip>/<ip>.xci
 
 # --- this unit's RTL ---------------------------------------------------------
 read_vhdl -vhdl2008 [glob $_unit/rtl/*.vhd]

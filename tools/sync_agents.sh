@@ -15,7 +15,8 @@ cd "$ROOT"
 # 1. rules
 {
   echo "<!-- GENERATED from CLAUDE.md by tools/sync_agents.sh — do not edit here. -->"
-  grep -v -e '^<!-- Single source of truth' -e '^     by tools/sync_agents.sh' CLAUDE.md
+  # drop the first HTML comment block (the source-of-truth note)
+  awk 'c==0 && /^<!--/ {c=1} c==1 { if (/-->/) c=2; next } {print}' CLAUDE.md
 } > AGENTS.md
 
 # 2. skills

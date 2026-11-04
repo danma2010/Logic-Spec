@@ -7,7 +7,7 @@ status: pending           # pending | approved — any edit resets to pending
 
 Derived from the acceptance criteria in `architecture.md`. Each row maps to
 exactly one cocotb test in `tb/` with the given function name. Lint with
-`python3 tools/make_report.py --check designs/<unit>`.
+`python3 <LOGIC_SPEC>/tools/make_report.py --check <design>`.
 
 ## Features
 - **F1** ...

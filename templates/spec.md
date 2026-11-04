@@ -1,8 +1,9 @@
 # <unit> — Requirements (input)
 
-> **Input document, written by the user.** The framework never modifies this
-> file; `fpga-architect` derives `architecture.md` from it. Free-form is fine —
-> the headings below are a checklist, not a schema.
+> **Input document, written by the user** (`<design>/spec/spec.md`). The
+> framework never modifies this file; `fpga-spec` reviews it, asks about any
+> gaps and writes the refined `spec_work.md` that all later steps use.
+> Free-form is fine — the headings below are a checklist, not a schema.
 
 ## Purpose
 What the block does, in one or two sentences.

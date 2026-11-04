@@ -1,10 +1,10 @@
 # build_ip.tcl — generate & configure vendor IP for one unit (Vivado batch).
-# Emitted to designs/<unit>/tcl/build_ip.tcl by fpga-ip from the approved plan.
+# Emitted to <design>/tcl/build_ip.tcl by fpga-ip from the approved plan.
 #
 # RUN MANUALLY (from any directory):
-#   vivado -mode batch -source designs/<unit>/tcl/build_ip.tcl
+#   vivado -mode batch -source <design>/tcl/build_ip.tcl
 #
-# Output: designs/<unit>/tcl/ip/<module>/<module>.xci (+ generated targets),
+# Output: <design>/tcl/ip/<module>/<module>.xci (+ generated targets),
 # which run_sources.tcl / synth_sources.tcl read with read_ip.
 
 set SCRIPT_DIR [file normalize [file dirname [info script]]]

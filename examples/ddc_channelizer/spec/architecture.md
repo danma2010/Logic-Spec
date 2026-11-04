@@ -6,7 +6,7 @@ kind: composite
 top: ddc_channelizer
 status: planned            # architecture only; no plan approved, no code yet
 dependencies:
-  - axis_fifo_loopback     # PENDING (not yet validated) — blocks plan approval
+  - ../axis_fifo_loopback  # PENDING (not yet validated) — blocks plan approval
 ports:
   - { name: s_axis_aclk,    dir: in,  width: 1 }
   - { name: s_axis_aresetn, dir: in,  width: 1 }

@@ -8,7 +8,7 @@ real tool run.
 The loop is **generate → simulate → repair**, and it is **human-gated**: the
 agent prepares the design, the test plan, the testbench and the scripts;
 **you** run Questa/Vivado; the per-test report comes back to the agent. The
-agent never runs an EDA tool and never claims a run happened (rule 6 in
+agent never runs an EDA tool and never claims a run happened (rule 7 in
 `CLAUDE.md`/`AGENTS.md`) — except in the opt-in auto mode below.
 
 ## "Check" has two halves
@@ -31,7 +31,7 @@ agent never runs an EDA tool and never claims a run happened (rule 6 in
                  ┌──────────────────────────────────────────────────────┐
    generate      ▼                                                       │ repair (minimal fix)
  ┌──────────────────────────────┐  you run              ┌────────────┐   │
- │ fpga-rtl    fpga-testbench    │  run_tests.sh <unit>  │  Questa    │   │
+ │ fpga-rtl    fpga-testbench    │  run_tests.sh .       │  Questa    │   │
  │ fpga-ip     fpga-questa       │──────────────────────▶│ test by    │   │
  └──────────────────────────────┘                       │ test       │   │
       architecture.md: generated                         └─────┬──────┘   │
@@ -51,15 +51,17 @@ agent never runs an EDA tool and never claims a run happened (rule 6 in
 
 ## The exact commands
 
+Run from the design folder; `$LS` = the Logic-Spec framework folder.
+
 | Step | You run |
 |---|---|
-| Vendor libs (once per tool version) | `QUESTA_BIN=… vivado -mode batch -source tools/compile_simlib.tcl` |
-| Lint the test plan | `python3 tools/make_report.py --check designs/<unit>` |
-| All tests + report | `bash tools/run_tests.sh <unit>` |
-| One test after a fix | `bash tools/run_tests.sh <unit> questa <ID>` |
-| Reproduce a seed | `RANDOM_SEED=<n> bash tools/run_tests.sh <unit> questa <ID>` |
-| Give the agent the result | point it at `designs/<unit>/sim/test_report.md` (or paste it) |
-| SV/UVM path | `vsim -c -do designs/<unit>/sim/run_sim.tcl` |
+| Vendor libs (once per tool version) | `QUESTA_BIN=… vivado -mode batch -source $LS/tools/compile_simlib.tcl` |
+| Lint the test plan | `python3 $LS/tools/make_report.py --check .` |
+| All tests + report | `bash $LS/tools/run_tests.sh .` |
+| One test after a fix | `bash $LS/tools/run_tests.sh . questa <ID>` |
+| Reproduce a seed | `RANDOM_SEED=<n> bash $LS/tools/run_tests.sh . questa <ID>` |
+| Give the agent the result | point it at `sim/test_report.md` (or paste it) |
+| SV/UVM path | `vsim -c -do sim/run_sim.tcl` |
 
 The report marks a result **STALE** when RTL, testbench, IP Tcl or the test
 plan changed after that test ran, so a fix always needs a re-run before gate 3.
@@ -93,7 +95,7 @@ Validation needs a **full** run in the **default** configuration (no
 
 ## Automatic mode (opt-in) — `fpga-auto`
 
-When you explicitly invoke `fpga-auto <unit>`, the agent runs the loop itself:
+When you explicitly invoke `fpga-auto` in a design folder, the agent runs the loop itself:
 
 ```
         ┌────────────────────────────────────────────────────────┐
@@ -111,7 +113,7 @@ When you explicitly invoke `fpga-auto <unit>`, the agent runs the loop itself:
 ```
 
 Guardrails (`.claude/skills/fpga-auto/SKILL.md`): functional sim + OOC synth
-only (never implementation, bitstream or hardware); gates 1 and 2 still apply;
+only (never implementation, bitstream or hardware); gates 0, 1 and 2 still apply;
 bounded (default 5 iterations) with an audit trail in `sim/auto_log.md`; stops
 on a repeated or ambiguous failure, a port/test-plan change, or a
 timing/resource failure; asks before stamping `validated`; reports only real

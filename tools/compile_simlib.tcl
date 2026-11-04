@@ -1,11 +1,11 @@
 # compile_simlib.tcl — compile vendor simulation libraries for Questa (ONE-TIME,
-# per Vivado/Questa version). Shared by every unit.
+# per Vivado/Questa version). Shared by every design that uses this framework.
 #
 # RUN MANUALLY (from any directory):
 #   QUESTA_BIN=<path to questa bin dir> vivado -mode batch -source tools/compile_simlib.tcl
 #   optional: FAMILY=artix7 (default: all — slow)   SIMLIB_DIR=<override output dir>
 #
-# Output: <repo>/simlibs/questa/ (+ modelsim.ini with all library mappings).
+# Output: <LOGIC_SPEC>/simlibs/questa/ (+ modelsim.ini with all library mappings).
 # tb/Makefile and sim/run_sim.tcl pick it up automatically.
 # (Altera/Intel: use Quartus' simulation-library compiler instead.)
 

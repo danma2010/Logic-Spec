@@ -1,3 +1,14 @@
+# Cycle 2 — 2026-11-04 (migration)
+- **Stage completed:** framework migration to external design folders
+- **Unit status:** generated
+- **Spec work (gate 0):** not started — run `fpga-spec` (new first step)
+- **Plan:** pending
+- **Test plan:** pending
+- **Tests:** not run
+- **Notes:** documents moved to `spec/`; framework tools now take the design
+  folder (`bash <LOGIC_SPEC>/tools/run_tests.sh .`). Gate 0 must be
+  approved before tests can count for validation.
+
 # Cycle 2 — 2026-10-12
 - **Stage completed:** framework consistency migration
 - **Unit status:** generated (RTL top added; tests not run)

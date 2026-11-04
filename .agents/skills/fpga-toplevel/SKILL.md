@@ -9,16 +9,17 @@ Interface → pins → constraints → non-project build, plus a top integration
 
 ## Gate checks (do these first)
 
-1. `designs/<top>/architecture.md` has `kind: top`; `plan.md` and
-   `testplan.md` are `status: approved`.
-2. **Every** unit in `dependencies` (transitively) is `status: validated`.
+1. `spec/architecture.md` has `kind: top`; `spec/plan.md` and
+   `spec/testplan.md` are `status: approved`.
+2. **Every** unit in `dependencies` (transitively: each `<dep>/spec/architecture.md`
+   and its own dependencies) is `status: validated`.
    If any is not, stop and name it.
 
 ## Steps
 
 ### 1. Constraints from the pin map
-Read the pin map from `architecture.md` (or the file it references). Generate
-or **patch** `designs/<top>/xdc/<top>_pins.xdc` (from `templates/xdc/pins.xdc`):
+Read the pin map from `spec/architecture.md` (or the file it references). Generate
+or **patch** `xdc/<top>_pins.xdc` (from `{{LOGIC_SPEC}}/templates/xdc/pins.xdc`):
 
 - Xilinx: `set_property PACKAGE_PIN <pin> [get_ports <port>]`,
   `set_property IOSTANDARD <std> [get_ports <port>]`,
@@ -30,12 +31,13 @@ or **patch** `designs/<top>/xdc/<top>_pins.xdc` (from `templates/xdc/pins.xdc`):
 If a constraints file exists, patch it — never clobber it.
 
 ### 2. Non-project build (modular)
-Generate or patch `designs/<top>/impl/build.tcl` from
-`templates/vivado/build.tcl` (`TOP`/`PART` from `architecture.md`). It sources,
+Generate or patch `impl/build.tcl` from
+`{{LOGIC_SPEC}}/templates/vivado/build.tcl` (`TOP`/`PART` from `spec/architecture.md`). It sources,
 from its own directory:
 
-- `run_sources.tcl` (from `templates/vivado/run_sources.tcl`) — all RTL of the
-  hierarchy **bottom-up** (leaf units, then composites, then the top), plus
+- `run_sources.tcl` (from `{{LOGIC_SPEC}}/templates/vivado/run_sources.tcl`) — all RTL of the
+  hierarchy **bottom-up** (leaf design folders, then composites, then the top;
+  dependency paths relative to the script), plus
   `read_ip` for generated IP and `read_bd` for any BD;
 - `run_constraints.tcl` — `read_xdc` of the files from step 1.
 
@@ -44,20 +46,20 @@ paths are resolved from the script location. Versal: `write_device_image`
 instead of `write_bitstream`.
 
 ### 3. Top integration test
-The top's tests come from its own `testplan.md` (run `fpga-testbench` for the
-top so the full subtree is compiled) and run with `tools/run_tests.sh <top>`.
+The top's tests come from its own `spec/testplan.md` (run `fpga-testbench` for the
+top so the full subtree is compiled) and run with `bash {{LOGIC_SPEC}}/tools/run_tests.sh .`.
 
 ## Manual run (print; do not run)
 
 ```
-bash tools/run_tests.sh <top>                                # integration tests
-vivado -mode batch -source designs/<top>/impl/build.tcl      # to bitstream
+bash {{LOGIC_SPEC}}/tools/run_tests.sh .                                # integration tests
+vivado -mode batch -source impl/build.tcl      # to bitstream
 ```
 
 ## Design log
 
-Prepend an entry to `designs/<name>/design_log.md` (format:
-`templates/design_log.md`): same cycle number while the unit is in the same
+Prepend an entry to `spec/design_log.md` (format:
+`{{LOGIC_SPEC}}/templates/design_log.md`): same cycle number while the unit is in the same
 design round, +1 when a new round starts (e.g. after a validated unit is
 changed). Record the stage completed, unit status, plan / test-plan status and
 test results.
