@@ -1,0 +1,29 @@
+# Normalise line endings: LF in the repository, native on checkout.
+* text=auto
+
+# Must stay LF everywhere (bash / make break on CRLF)
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.mk      text eol=lf
+
+# Source and docs
+*.md   text
+*.vhd  text
+*.vhdl text
+*.v    text
+*.sv   text
+*.tcl  text
+*.xdc  text
+*.py   text
+*.json text
+*.yaml text
+*.yml  text
+
+# Binary
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+*.bit  binary
+*.dcp  binary
+*.xpr  binary
+*.zip  binary
